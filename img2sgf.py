@@ -21,6 +21,7 @@ import tkinter as tk
 from tkinter import messagebox as mb
 from tkinter import filedialog
 from tkinter import scrolledtext as scrolledtext
+from cnocr import CnOcr
 import cv2 as cv
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -99,6 +100,8 @@ selection_global = np.array((0,0,0,0)) # current region relative to original ima
 
 stone_brightnesses = []
 
+ocr = CnOcr()
+steps = {}
 
 # Part 2: image processing functions
 
@@ -465,7 +468,7 @@ def closest_grid_index(p):
   return (closest_index(p[0], vcentres_complete), closest_index(p[1], hcentres_complete))
 
 
-def average_intensity(i, j):
+def average_intensity(i, j, with_step=False):
   # Input: i, j are grid coordinates of a point on the board
   # Output: average pixel intensity of a neighbourhood of p,
   # to help distinguish between black and white stones
@@ -478,6 +481,14 @@ def average_intensity(i, j):
   ymin = max(0, ymin)
   xmax = min(grey_image_np.shape[1], xmax)
   ymax = min(grey_image_np.shape[0], ymax)
+
+  if with_step:
+    out = ocr.ocr(np.array(grey_image_np[ymin:ymax, xmin:xmax]))
+    if len(out) > 0:
+      step_num = out[0]['text']
+      steps[step_num] = [i, j]
+      log('step: {}: [{}, {}]'.format(step_num, i, j))
+
   return np.mean(grey_image_np[ymin:ymax, xmin:xmax]) #nb flip x,y for np indexing
 
 
@@ -485,7 +496,7 @@ def align_board(b, a):
   # b is a part board, a is an alignment (top, left, etc)
   # return a full board with b in the appropriate side/quadrant
   board = np.zeros((BOARD_SIZE, BOARD_SIZE))
-  
+
   xoffset = BOARD_SIZE - hsize if a[0] == Alignment.RIGHT else 0
   yoffset = BOARD_SIZE - vsize if a[1] == Alignment.BOTTOM else 0
   for i in range(hsize):
@@ -510,7 +521,7 @@ def identify_board():
   for j in range(hsize):
     for k in range(vsize):
       if detected_board[j,k] == BoardStates.STONE:
-        stone_brightnesses[i] = average_intensity(j, k)
+        stone_brightnesses[i] = average_intensity(j, k, with_step=True)
         i += 1
   num_black_stones = sum(stone_brightnesses <= black_stone_threshold)
   black_text = str(num_black_stones) + " black stone"
@@ -564,7 +575,7 @@ def find_grid():
     for x in added_vcentres:
       threshold_subfigure.plot((x,x), (ymin, ymax), "red", linewidth=1)
     threshold_plot.draw()
-      
+
     if hsize > BOARD_SIZE:
       log("Too many vertical lines!")
     elif vsize > BOARD_SIZE:
@@ -673,7 +684,7 @@ def update_selection_rect(event):
     return
   selection_local[2:4] = (event.x, event.y)
   input_canvas.coords(sel_rect_id, tuple(selection_local))
-    
+
 def select_region():
   global selection_local, selection_global, sel_rect_id, region_PIL
 
@@ -765,7 +776,7 @@ def apply_black_thresh(event):
   identify_board()
   draw_board()
 
-    
+
 def screen_capture():
   global input_image_PIL
   main_window.state("iconic")
@@ -935,7 +946,7 @@ def draw_board():
         output_canvas.create_oval(x-r, y-r, x+r, y+r, fill="white")
       elif full_board[i,j] == BoardStates.BLACK:
         output_canvas.create_oval(x-r, y-r, x+r, y+r, fill="black")
-        
+
   # Positioning circles: these should only appear for part board positions
   pos_centres = []
   if hsize < BOARD_SIZE and vsize < BOARD_SIZE:
@@ -1010,7 +1021,7 @@ def edit_board(event):
 #  input_frame  | processed_frame  | output_frame
 #  -------------+------------------+-------------
 #  input_canvas | processed_canvas | output_canvas
-# 
+#
 #  Frames contain buttons and text; canvases contain images
 
 main_window = tk.Tk()
