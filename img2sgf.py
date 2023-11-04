@@ -522,7 +522,7 @@ def average_intensity(i, j, with_step=False):
     step_num, res = ocr_2(stone_image)
     if res:
       steps[step_num] = [i, j]
-      log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
+      #log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
 
   return brightness #nb flip x,y for np with x first but cv2 image with height first.
 
@@ -542,10 +542,11 @@ def align_board(b, a):
 
 def identify_board():
   global detected_board, full_board, stone_brightnesses, \
-         num_black_stones, num_white_stones
+         num_black_stones, num_white_stones, steps
 
   log("Guessing stone colours based on a threshold of " + str(black_stone_threshold))
   detected_board = np.zeros((hsize, vsize))
+  steps.clear()
   num_black_stones, num_white_stones = 0,0
   for c in circles:
     detected_board[closest_grid_index(c[0:2])] = BoardStates.STONE
@@ -570,6 +571,7 @@ def identify_board():
     white_text += "s"
   log("Detected " + black_text + " and " + white_text + " on a "
                   + str(hsize) + "x" + str(vsize) + " board.")
+  log("steps: {}".format(sorted(steps.items(), key=lambda s:s[0])))
 
   # Guess whose move it is based on stone count:
   # this will sometimes be wrong because of handicaps, captures, part board positions
@@ -678,6 +680,7 @@ def initialise_parameters():
   selection_global = np.array([0,0] + list(region_PIL.size))
   rotate_angle.set(0)
   threshold.set(choose_threshold(region_PIL))
+
   process_image()
   draw_images()
 
@@ -852,6 +855,48 @@ def to_SGF(board):
   return output
 
 
+def to_sgf_with_step(board):
+  global steps
+  # Return an SGF representation of the board state
+  board_letters = string.ascii_lowercase # 'a' to 'z'
+  output = "(;GM[1]FF[4]SZ[" + str(BOARD_SIZE) + "]\n"
+  if side_to_move.get() == 1:
+    output += "PL[B]\n"
+  else:
+    output += "PL[W]\n"
+  black_moves, white_moves = "", ""
+  if BoardStates.BLACK in board:
+    black_moves += "AB"
+    for i in range(BOARD_SIZE):
+      for j in range(BOARD_SIZE):
+        if board[i,j] == BoardStates.BLACK:
+          black_moves += "[" + board_letters[i] + board_letters[j] + "]"
+  if BoardStates.WHITE in board:
+    white_moves += "AW"
+    for i in range(BOARD_SIZE):
+      for j in range(BOARD_SIZE):
+        if board[i,j] == BoardStates.WHITE:
+          white_moves += "[" + board_letters[i] + board_letters[j] + "]"
+  step_moves =""
+  for ind, step in sorted(steps.items(), key=lambda s:s[0]):
+    i, j = step[0], step[1]
+    step_move = "[" + board_letters[i] + board_letters[j] + "]"
+    if board[i][j] == BoardStates.WHITE:
+      white_moves = white_moves.replace(step_move, "")
+      step_moves += ";W"+step_move
+    else:
+      black_moves = black_moves.replace(step_move, "")
+      step_moves += ";B"+step_move
+
+  if side_to_move.get() == 1:
+    output += black_moves + "\n" + white_moves + "\n"
+  else:
+    output += white_moves + "\n" + black_moves + "\n"
+
+  output +=  step_moves + ")\n"
+  return output
+
+
 def save_SGF():
   global output_file
   if output_file is not None:
@@ -859,7 +904,7 @@ def save_SGF():
   else:
     output_file = filedialog.asksaveasfilename()
   sgf = open(output_file, "w")
-  sgf.write(to_SGF(full_board))
+  sgf.write(to_sgf_with_step(full_board))
   sgf.close()
   log("Saved to file " + output_file)
 
