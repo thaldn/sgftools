@@ -25,7 +25,7 @@ from tkinter import scrolledtext as scrolledtext
 from cnocr import CnOcr
 import pytesseract as numocr
 
-import cv2 as cv
+import cv2
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
 from enum import Enum, IntEnum
@@ -157,7 +157,7 @@ def process_image():
   input_image_np = np.array(region_PIL)
 
   log("Converting to grayscale")
-  gray_image_np = cv.cvtColor(input_image_np, cv.COLOR_BGR2GRAY)
+  gray_image_np = cv2.cvtColor(input_image_np, cv2.COLOR_BGR2GRAY)
 
   #log("Running Canny edge detection algorithm with parameters:\n" +
   #    "- min threshold=" + str(edge_min.get()) + "\n" +
@@ -166,7 +166,7 @@ def process_image():
   #    "- L" + str(gradient.get()) + " norm")
   log("Running Canny edge detection algorithm")
   # no point logging the parameters now I've turned off the UI for changing them
-  edge_detected_image_np = cv.Canny(input_image_np,
+  edge_detected_image_np = cv2.Canny(input_image_np,
                               edge_min.get(), edge_max.get(),
                               apertureSize = sobel.get(),
                               L2gradient = (gradient.get()==2))
@@ -178,13 +178,13 @@ def process_image():
   blurs = [gray_image_np, edge_detected_image_np]
   for i in range(maxblur+1):
     b = 2*i + 1
-    blurs.append(cv.medianBlur(gray_image_np, b))
-    blurs.append(cv.GaussianBlur(gray_image_np, (b,b), b))
+    blurs.append(cv2.medianBlur(gray_image_np, b))
+    blurs.append(cv2.GaussianBlur(gray_image_np, (b,b), b))
 
   first_circles = True
   circles = []
   for b in blurs:
-    c = cv.HoughCircles(b, cv.HOUGH_GRADIENT, 1, 10, np.array([]), 100, 30, 1, 30)
+    c = cv2.HoughCircles(b, cv2.HOUGH_GRADIENT, 1, 10, np.array([]), 100, 30, 1, 30)
     if len(c)>0:
       if first_circles:
         circles = c[0]
@@ -201,8 +201,8 @@ def process_image():
     ul = (int(round(xc-r)), int(round(yc-r)))
     lr = (int(round(xc+r)), int(round(yc+r)))
     middle = (int(round(xc)), int(round(yc)))
-    cv.rectangle(circles_removed_image_np, ul, lr, (0,0,0), -1)  # -1 = filled
-    cv.circle(circles_removed_image_np, middle, 1, (255,255,255), -1)
+    cv2.rectangle(circles_removed_image_np, ul, lr, (0,0,0), -1)  # -1 = filled
+    cv2.circle(circles_removed_image_np, middle, 1, (255,255,255), -1)
 
   circles_removed_image_PIL = Image.fromarray(circles_removed_image_np)
 
@@ -240,13 +240,13 @@ def find_lines(threshold, direction):
   # Remember that horizontal lines intercept the y-axis,
   #   be careful not to get x and y the wrong way round!
   if direction == Direction.H:
-    lines = cv.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
+    lines = cv2.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
                           threshold=threshold, min_theta = math.pi/2 - angle_delta, \
                           max_theta = math.pi/2 + angle_delta)
   else:
-    vlines1 = cv.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
+    vlines1 = cv2.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
                             threshold=threshold, min_theta = 0, max_theta = angle_delta)
-    vlines2 = cv.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
+    vlines2 = cv2.HoughLines(circles_removed_image_np, rho=1, theta=math.pi/180.0, \
                             threshold=threshold, min_theta = math.pi - angle_delta, \
                             max_theta = math.pi)
     if vlines2 is not None:
@@ -488,6 +488,20 @@ def ocr_1(stone_image):
 
     return (0, False)
 
+def norm_step_img(img):
+    status = WHITE
+    brightness = np.mean(img)
+    if brightness <= black_stone_threshold:
+        img = 255 - img
+        status = BLACK
+    # maybe there is error the stones at edge of board
+    center = np.array(img.shape) // 2
+    radius = np.min(center) - 2
+    mask = np.ones(img.shape,dtype=np.uint8)
+    mask = cv2.circle(mask, center, radius, (0,0,0), -1)
+    cv2.add(img, 255*mask, img, mask = mask)
+    return (img, brightness, status)
+
 def average_intensity(i, j, with_step=False):
   # Input: i, j are grid coordinates of a point on the board
   # Output: average pixel intensity of a neighbourhood of p,
@@ -502,8 +516,7 @@ def average_intensity(i, j, with_step=False):
   xmax = min(gray_image_np.shape[1], xmax)
   ymax = min(gray_image_np.shape[0], ymax)
 
-  offset = int(hspace / 13 + 0.5)
-  stone_image = gray_image_np[ymin+offset:ymax-offset, xmin+offset:xmax-offset]
+  stone_image, brightness, black_or_white = norm_step_img(gray_image_np[ymin:ymax, xmin:xmax])
 
   if with_step:
     step_num, res = ocr_2(stone_image)
@@ -511,7 +524,7 @@ def average_intensity(i, j, with_step=False):
       steps[step_num] = [i, j]
       log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
 
-  return np.mean(stone_image) #nb flip x,y for np indexing
+  return brightness #nb flip x,y for np with x first but cv2 image with height first.
 
 
 def align_board(b, a):
@@ -543,7 +556,9 @@ def identify_board():
   for j in range(hsize):
     for k in range(vsize):
       if detected_board[j,k] == BoardStates.STONE:
-        stone_brightnesses[i] = average_intensity(j, k)
+        stone_brightnesses[i] = average_intensity(j, k, with_step = True)
+        detected_board[j,k] = BoardStates.BLACK if stone_brightnesses[i]<= black_stone_threshold \
+                                       else BoardStates.WHITE
         i += 1
   num_black_stones = sum(stone_brightnesses <= black_stone_threshold)
   black_text = str(num_black_stones) + " black stone"
@@ -567,12 +582,6 @@ def identify_board():
     side_to_move.set(WHITE)
   draw_histogram(stone_brightnesses)
 
-  for i in range(hsize):
-    for j in range(vsize):
-      if detected_board[i,j] == BoardStates.STONE:
-        x = average_intensity(i, j, with_step = True)
-        detected_board[i,j] = BoardStates.BLACK if x <= black_stone_threshold \
-                                       else BoardStates.WHITE
   full_board = align_board(detected_board.copy(), board_alignment)
 
 
@@ -1276,7 +1285,7 @@ log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 try: # in a try block in case any other package updates remove the .__version__ attribute
      # (TKinter, what were you thinking?)
   log("Using Tk version " + str(tk.TkVersion))
-  log("Using OpenCV version " + cv.__version__)
+  log("Using OpenCV version " + cv2.__version__)
   log("Using numpy version " + np.__version__)
   log("Using scikit-learn version " + sklearn.__version__)
   log("Using matplotlib version " + matplotlib.__version__)
