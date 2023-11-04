@@ -21,7 +21,10 @@ import tkinter as tk
 from tkinter import messagebox as mb
 from tkinter import filedialog
 from tkinter import scrolledtext as scrolledtext
+
 from cnocr import CnOcr
+import pytesseract as numocr
+
 import cv2 as cv
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -100,7 +103,8 @@ selection_global = np.array((0,0,0,0)) # current region relative to original ima
 
 stone_brightnesses = []
 
-ocr = CnOcr()
+#ocr = CnOcr(det_model_name='naive_det')
+ocr = CnOcr(cand_alphabet="0123456789")
 steps = {}
 
 # Part 2: image processing functions
@@ -120,7 +124,7 @@ def crop_and_rotate_image():
 def process_image():
   global input_image_np, edge_detected_image_np, edge_detected_image_PIL, \
          circles, circles_removed_image_np, circles_removed_image_PIL, \
-         grey_image_np, region_PIL
+         gray_image_np, region_PIL
   # photos (_PIL images) need to be global so that the garbage collector doesn't
   # clean them up and blank out the canvases
   # numpy images (_np) are used by other functions
@@ -152,8 +156,8 @@ def process_image():
   region_PIL = ImageEnhance.Brightness(region_PIL).enhance(scaled_brightness)
   input_image_np = np.array(region_PIL)
 
-  log("Converting to greyscale")
-  grey_image_np = cv.cvtColor(input_image_np, cv.COLOR_BGR2GRAY)
+  log("Converting to grayscale")
+  gray_image_np = cv.cvtColor(input_image_np, cv.COLOR_BGR2GRAY)
 
   #log("Running Canny edge detection algorithm with parameters:\n" +
   #    "- min threshold=" + str(edge_min.get()) + "\n" +
@@ -171,11 +175,11 @@ def process_image():
   log("Detecting circles")
   circles_removed_image_np = edge_detected_image_np.copy()
     # Make a few different blurred versions of the image, so we can find most of the circles
-  blurs = [grey_image_np, edge_detected_image_np]
+  blurs = [gray_image_np, edge_detected_image_np]
   for i in range(maxblur+1):
     b = 2*i + 1
-    blurs.append(cv.medianBlur(grey_image_np, b))
-    blurs.append(cv.GaussianBlur(grey_image_np, (b,b), b))
+    blurs.append(cv.medianBlur(gray_image_np, b))
+    blurs.append(cv.GaussianBlur(gray_image_np, (b,b), b))
 
   first_circles = True
   circles = []
@@ -467,29 +471,47 @@ def closest_grid_index(p):
   # Output: (i, j) coordinates of p on the board
   return (closest_index(p[0], vcentres_complete), closest_index(p[1], hcentres_complete))
 
+def ocr_2(stone_image):
+    result = numocr.image_to_string(stone_image, config='--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789').strip()
+    if result.isdigit():
+      step_num = eval(result)
+      return (step_num, True)
+    return (0, False)
+
+def ocr_1(stone_image):
+    out = ocr.ocr(stone_image)
+    if len(out) > 0:
+      result = out[0]['text'].strip()
+      if result.isdigit():
+        step_num = eval(result)
+        return (step_num, True)
+
+    return (0, False)
 
 def average_intensity(i, j, with_step=False):
   # Input: i, j are grid coordinates of a point on the board
   # Output: average pixel intensity of a neighbourhood of p,
   # to help distinguish between black and white stones
   x = vcentres_complete[i]
-  xmin, xmax = int(round(x-hspace/2)), int(round(x+hspace/2))
+  xmin, xmax = int(round(x-hspace*0.40)), int(round(x+hspace*0.40))
   y = hcentres_complete[j]
-  ymin, ymax = int(round(y-vspace/2)), int(round(y+vspace/2))
+  ymin, ymax = int(round(y-vspace*0.40)), int(round(y+vspace*0.40))
   # Truncate coordinates to stay in bounds: sometimes circles can go outside the image
   xmin = max(0, xmin)
   ymin = max(0, ymin)
-  xmax = min(grey_image_np.shape[1], xmax)
-  ymax = min(grey_image_np.shape[0], ymax)
+  xmax = min(gray_image_np.shape[1], xmax)
+  ymax = min(gray_image_np.shape[0], ymax)
+
+  offset = int(hspace / 13 + 0.5)
+  stone_image = gray_image_np[ymin+offset:ymax-offset, xmin+offset:xmax-offset]
 
   if with_step:
-    out = ocr.ocr(np.array(grey_image_np[ymin:ymax, xmin:xmax]))
-    if len(out) > 0:
-      step_num = out[0]['text']
+    step_num, res = ocr_2(stone_image)
+    if res:
       steps[step_num] = [i, j]
-      log('step: {}: [{}, {}]'.format(step_num, i, j))
+      log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
 
-  return np.mean(grey_image_np[ymin:ymax, xmin:xmax]) #nb flip x,y for np indexing
+  return np.mean(stone_image) #nb flip x,y for np indexing
 
 
 def align_board(b, a):
@@ -521,7 +543,7 @@ def identify_board():
   for j in range(hsize):
     for k in range(vsize):
       if detected_board[j,k] == BoardStates.STONE:
-        stone_brightnesses[i] = average_intensity(j, k, with_step=True)
+        stone_brightnesses[i] = average_intensity(j, k)
         i += 1
   num_black_stones = sum(stone_brightnesses <= black_stone_threshold)
   black_text = str(num_black_stones) + " black stone"
@@ -548,7 +570,7 @@ def identify_board():
   for i in range(hsize):
     for j in range(vsize):
       if detected_board[i,j] == BoardStates.STONE:
-        x = average_intensity(i, j)
+        x = average_intensity(i, j, with_step = True)
         detected_board[i,j] = BoardStates.BLACK if x <= black_stone_threshold \
                                        else BoardStates.WHITE
   full_board = align_board(detected_board.copy(), board_alignment)
