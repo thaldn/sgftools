@@ -104,7 +104,8 @@ selection_global = np.array((0,0,0,0)) # current region relative to original ima
 stone_brightnesses = []
 
 #ocr = CnOcr(det_model_name='naive_det')
-ocr = CnOcr(cand_alphabet="0123456789")
+#ocr = CnOcr(cand_alphabet="0123456789")
+ocr = CnOcr(det_model_name='en_number_mobile_v2.0', cand_alphabet='0123456789')
 steps = {}
 
 # Part 2: image processing functions
@@ -519,10 +520,10 @@ def average_intensity(i, j, with_step=False):
   stone_image, brightness, black_or_white = norm_step_img(gray_image_np[ymin:ymax, xmin:xmax])
 
   if with_step:
-    step_num, res = ocr_2(stone_image)
+    step_num, res = ocr_1(stone_image)
     if res:
       steps[step_num] = [i, j]
-      #log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
+      log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
 
   return brightness #nb flip x,y for np with x first but cv2 image with height first.
 
@@ -537,6 +538,8 @@ def align_board(b, a):
   for i in range(hsize):
     for j in range(vsize):
       board[i+xoffset, j+yoffset] = b[i,j]
+  for step, pos in steps.items():
+    steps[step] = [pos[0] + xoffset, pos[1] + yoffset]
   return(board)
 
 
