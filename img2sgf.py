@@ -45,7 +45,8 @@ from datetime import datetime
 import os, sys, math, string
 
 BOARD_SIZE = 19
-threshold_default = 80 # line detection votes threshold
+#threshold_default = 80 # line detection votes threshold
+threshold_default = 200 # line detection votes threshold
 black_stone_threshold_default = 128 # brightness on a scale of 0-255
 black_stone_threshold = black_stone_threshold_default
 edge_min_default = 50 # edge detection min threshold
@@ -57,7 +58,8 @@ angle_tolerance = 1.0 # accept lines up to 1 degree away from horizontal or vert
 angle_delta = math.pi/180*angle_tolerance
 min_grid_spacing = 10
 big_space_ratio = 1.6 # try to fill in grid spaces that are >1.6 * min spacing
-contrast_default = 70 # by default, raise the contrast a bit, it often seems to help!
+#by default 70, raise the contrast a bit, it often seems to help!
+contrast_default = 58 # by default, raise the contrast a bit, it often seems to help!
 brightness_default = 50 # don't change brightness
 
 image_size = 400
@@ -656,7 +658,7 @@ def choose_threshold(img):
   # Generally, smaller images work better with smaller thresholds
   x = min(img.size)
   t = int(x/12.8 + 16) # just guessing the parameters, this seems to work OK
-  t = min(max(t, 20), 200) # restrict to t between 20 and 200
+  t = max(max(t, 20), threshold_default) # restrict to t between 20 and 200
   return int(t)
 
 
@@ -671,7 +673,7 @@ def initialise_parameters():
   valid_grid   = False
   board_ready  = False
   save_button.configure(state=tk.DISABLED)
-  board_alignment = [Alignment.LEFT, Alignment.TOP]
+  board_alignment = [Alignment.LEFT, Alignment.BOTTOM]
   reset_button.configure(state=tk.DISABLED)
   rotate_angle.set(0)
   previous_rotation_angle = 0
