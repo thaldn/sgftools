@@ -27,6 +27,8 @@ import pytesseract as numocr
 
 import cv2
 import numpy as np
+import os
+import time
 from sklearn.cluster import AgglomerativeClustering
 from enum import Enum, IntEnum
 from bisect import bisect_left
@@ -98,6 +100,8 @@ image_loaded = False
 found_grid   = False
 valid_grid   = False
 board_ready  = False
+color_white = (255, 255, 255)
+color_black = (0, 0, 0)
 
 selection_local = np.array((0,0,0,0))
   # selection rectangle x1, y1, x2, y2 relative to current region
@@ -200,12 +204,15 @@ def process_image():
   # there are lots of stones on top of the line
   for i in range(len(circles)):
     xc, yc, r = circles[i,:]
+    xc, yc, r = (int(xc), int(yc), int(r))
     r = r+2 # need +2 because circle edges can stick out a little past the bounding box
     ul = (int(round(xc-r)), int(round(yc-r)))
     lr = (int(round(xc+r)), int(round(yc+r)))
     middle = (int(round(xc)), int(round(yc)))
-    cv2.rectangle(circles_removed_image_np, ul, lr, (0,0,0), -1)  # -1 = filled
-    cv2.circle(circles_removed_image_np, middle, 1, (255,255,255), -1)
+    cv2.rectangle(circles_removed_image_np, ul, lr, color_black, -1)  # -1 = filled
+    #cv2.circle(circles_removed_image_np, middle, 1, color_white, -1)
+    cv2.line(circles_removed_image_np, (xc-r>>2, yc),(xc, yc), color_white, 1)
+    cv2.line(circles_removed_image_np, (xc, yc), (xc, yc+r>>2), color_white, 1)
 
   circles_removed_image_PIL = Image.fromarray(circles_removed_image_np)
 
@@ -264,7 +271,7 @@ def find_lines(threshold, direction):
   return [] if lines is None else lines[:,0,0].reshape(-1,1)
     # reshape because clustering function prefers column vector not row
 
-
+#if the board is full of stones, it works badly.
 def find_all_lines():
   hlines = find_lines(threshold.get(), Direction.HORIZONTAL)
   hcount = len(hlines)
@@ -523,6 +530,8 @@ def average_intensity(i, j, with_step=False):
 
   if with_step:
     step_num, res = ocr_1(stone_image)
+    #if step_num == 0:  #sometimes, "9" is judged as "0"
+    #  step_num = 9;
     if res:
       steps[step_num] = [i, j]
       log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
@@ -673,7 +682,7 @@ def initialise_parameters():
   valid_grid   = False
   board_ready  = False
   save_button.configure(state=tk.DISABLED)
-  board_alignment = [Alignment.LEFT, Alignment.BOTTOM]
+  board_alignment = [Alignment.LEFT, Alignment.TOP]
   reset_button.configure(state=tk.DISABLED)
   rotate_angle.set(0)
   previous_rotation_angle = 0
@@ -819,6 +828,7 @@ def apply_black_thresh(event):
 def screen_capture():
   global input_image_PIL
   main_window.state("iconic")
+  time.sleep(0.3) #otherwise capture itself
   input_image_PIL = ImageGrab.grab()
   main_window.state("normal")
   log("\n" + datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
@@ -908,6 +918,9 @@ def save_SGF():
     output_file = filedialog.asksaveasfilename(initialfile = output_file)
   else:
     output_file = filedialog.asksaveasfilename()
+
+  if (len(os.path.splitext(output_file)[-1]) == 0):
+    output_file += ".sgf"
   sgf = open(output_file, "w")
   sgf.write(to_sgf_with_step(full_board))
   sgf.close()
