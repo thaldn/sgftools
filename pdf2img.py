@@ -53,20 +53,18 @@ def get_checkerboards_from_pdfimg(image, outimg):
         i+=1
 
 def get_allcheckers_frompdf(filename, start, end=-1, step=1):
-		if not os.path.exists(outputdir):
-				os.makedirs(outputdir)
+        if not os.path.exists(outputdir):
+                os.makedirs(outputdir)
 
-		tmpfile = "timg.png"
-		pdf = fitz.open(filename)
-		if end == -1:
-				end = pdf.page_count
-		pgnolist = list(range(start, end, step))
-		trans = fitz.Matrix(1.5, 1.5)
-		for pg in pgnolist:
-				page = pdf[pg-1]
-				pm = page.get_pixmap(matrix=trans, alpha=False)
-				outimgprefix = os.path.join(outputdir, f"img{pg}")
-				pm.save(tmpfile)
-				img = cv2.imread(tmpfile)
-				get_checkerboards_from_pdfimg(img, outimgprefix)
-		pdf.close()
+        pdf = fitz.open(filename)
+        if end == -1:
+                end = pdf.page_count
+        pgnolist = list(range(start, end, step))
+        trans = fitz.Matrix(1.5, 1.5)
+        for pg in pgnolist:
+                page = pdf[pg-1]
+                pix = page.get_pixmap(matrix=trans, alpha=False)
+                outimgprefix = os.path.join(outputdir, f"img{pg}")
+                img = np.frombuffer(buffer=pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, -1))
+                get_checkerboards_from_pdfimg(img, outimgprefix)
+        pdf.close()
