@@ -14,6 +14,18 @@ ocr_engine_ch = PaddleOCR(use_angle_cls=True, lang='ch', show_log=False) # need 
 ocr_engine_en = PaddleOCR(use_angle_cls=True, lang='en', show_log=False) # need to run only once to download and load model into memory
 structure_engine = PPStructure(table=False, ocr=False, show_log=False)
 
+def center_y(elem):
+    return (elem[0][0][1]+elem[0][2][1])/2
+def height(row):
+    return elem[0][2][1] - elem[0][0][1]
+def bound_x(row):
+    return (row[0][0][0][0], row[-1][0][2][0])
+def bound_y(row):
+    return (row[0][0][0][1], row[-1][0][2][1])
+def height(row):
+    top, bottom = bound_y(row)
+    return bottom - top
+
 def write_ocr_result(ocr_results, output_path: str, offset: int = 5, mode: str = "w", encoding: str = "utf-8"):
     # 按照 y中点 坐标排序
     sorted_by_y = sorted(ocr_results, key=lambda x: center_y(x))
@@ -33,13 +45,21 @@ def write_ocr_result(ocr_results, output_path: str, offset: int = 5, mode: str =
     temp_row = sorted(temp_row, key=lambda x: x[0][0])
     results.append(temp_row)
     with open(output_path, mode=mode, encoding=encoding) as f:
+        paragraph = ""
+        lb, rb = bound_x(results[0])
         for row in results:
             line = ""
+            clb, crb = bound_x(row)
             for item in row:
                 pos, (text, prob) = item
                 line += f"{text} "
             line = line.rstrip()
-            f.write(f"{line}\n")
+            paragraph += f"{line}"
+            if abs(crb - rb) > 3*offset:
+                f.write(f"{paragraph}\n")
+                paragraph = ""
+            lb, rb = clb, crb
+        f.write(f"{paragraph}")
 
 def ocr_from_image(input_path: str, lang: str = 'ch', output_path: str = None, offset: float = 5., use_double_columns: bool = False, show_log: bool = False):
     try:
@@ -58,3 +78,4 @@ def ocr_from_image(input_path: str, lang: str = 'ch', output_path: str = None, o
             raise ValueError("不支持的语言")
         result = ocr_engine.ocr(input_path, cls=False)[0]
         write_ocr_result(result, text_output_path, offset)
+    except:
