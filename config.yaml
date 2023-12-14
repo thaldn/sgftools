@@ -1,0 +1,21 @@
+# config.yaml
+-
+  brightness: 58
+  contrast: 50
+  line_threshold: 200
+  black_stone_threshold: 128
+-
+  brightness: 72
+  contrast: 67
+  line_threshold: 152
+  black_stone_threshold: 120
+-
+  brightness: 55
+  contrast: 53
+  line_threshold: 105
+  black_stone_threshold: 120
+-
+  brightness: 80
+  contrast: 50
+  line_threshold: 180
+  black_stone_threshold: 120

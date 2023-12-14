@@ -28,6 +28,7 @@ import pytesseract as numocr
 import cv2
 import numpy as np
 import os
+import yaml
 import time
 from sklearn.cluster import AgglomerativeClustering
 from enum import Enum, IntEnum
@@ -47,10 +48,6 @@ from datetime import datetime
 import os, sys, math, string
 
 BOARD_SIZE = 19
-#threshold_default = 80 # line detection votes threshold
-threshold_default = 200 # line detection votes threshold
-black_stone_threshold_default = 128 # brightness on a scale of 0-255
-black_stone_threshold = black_stone_threshold_default
 edge_min_default = 50 # edge detection min threshold
 edge_max_default = 200
 sobel_default = 3 # edge detection: Sobel filter size, choose from 3, 5 or 7
@@ -60,9 +57,13 @@ angle_tolerance = 1.0 # accept lines up to 1 degree away from horizontal or vert
 angle_delta = math.pi/180*angle_tolerance
 min_grid_spacing = 10
 big_space_ratio = 1.6 # try to fill in grid spaces that are >1.6 * min spacing
+
 #by default 70, raise the contrast a bit, it often seems to help!
 contrast_default = 58 # by default, raise the contrast a bit, it often seems to help!
 brightness_default = 50 # don't change brightness
+black_stone_threshold_default = 128 # brightness on a scale of 0-255
+#threshold_default = 80 # line detection votes threshold
+threshold_default = 200 # line detection votes threshold
 
 image_size = 400
 border_size = 20
@@ -670,6 +671,24 @@ def choose_threshold(img):
   t = max(max(t, 20), threshold_default) # restrict to t between 20 and 200
   return int(t)
 
+# read configuration, 0 or invalid will load default configuration.
+def load_default(i:int = 0):
+  global contrast_default, brightness_default, threshold_default, black_stone_threshold_default
+  with open("config.yaml", encoding='utf-8') as file:
+    content = file.read()
+    data = yaml.load(content, Loader=yaml.FullLoader)
+    if i in range(len(data)):
+      contrast_default = data[i]['contrast']
+      brightness_default = data[i]['brightness']
+      black_stone_threshold_default = data[i]['black_stone_threshold']
+      threshold_default = data[i]['line_threshold']
+    else:
+      #by default 70, raise the contrast a bit, it often seems to help!
+      contrast_default = 58 # by default, raise the contrast a bit, it often seems to help!
+      brightness_default = 50 # don't change brightness
+      black_stone_threshold_default = 128 # brightness on a scale of 0-255
+      #threshold_default = 80 # line detection votes threshold
+      threshold_default = 200 # line detection votes threshold
 
 def initialise_parameters():
   # common to open_file() and screen_capture()
@@ -684,6 +703,7 @@ def initialise_parameters():
   save_button.configure(state=tk.DISABLED)
   board_alignment = [Alignment.LEFT, Alignment.TOP]
   reset_button.configure(state=tk.DISABLED)
+  load_default(0)
   rotate_angle.set(0)
   previous_rotation_angle = 0
   contrast.set(contrast_default)
@@ -1234,13 +1254,13 @@ settings2.grid(row=0, column=1, sticky="nsew", padx=(5,0))
 contrast_label = tk.Label(settings1, text="Contrast")
 contrast_label.grid(row=0, sticky="nsew")
 contrast = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
-contrast.set(50)
+contrast.set(contrast_default)
 contrast.grid(row=1, padx=15, sticky="nsew")
 contrast.bind("<ButtonRelease-1>", lambda x: process_image())
 brightness_label = tk.Label(settings1, text="Brightness")
 brightness_label.grid(row=2, padx=15, sticky="nsew")
 brightness = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
-brightness.set(50)
+brightness.set(brightness_default)
 brightness.grid(row=3, padx=15, sticky="nsew")
 brightness.bind("<ButtonRelease-1>", lambda x: process_image())
 
@@ -1261,6 +1281,7 @@ edge_max.set(edge_max_default)
 #edge_max.bind("<ButtonRelease-1>", lambda x: process_image())
 sobel_label = tk.Label(settings1, text="Sobel aperture")
 #sobel_label.grid(row=10, pady=(20,0))
+
 def odd_only(n):
   # Restrict Sobel value scale to odd numbers
   # Thanks to https://stackoverflow.com/questions/20710514/selecting-odd-values-using-tkinter-scale for the hack
@@ -1270,6 +1291,7 @@ def odd_only(n):
   if n==6:
     n=7
   sobel.set(n)
+
 sobel = tk.Scale(settings1, from_=3, to=7, orient=tk.HORIZONTAL,
            command=odd_only, length=100)
 sobel.set(sobel_default)
