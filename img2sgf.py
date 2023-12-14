@@ -65,6 +65,8 @@ black_stone_threshold_default = 128 # brightness on a scale of 0-255
 #threshold_default = 80 # line detection votes threshold
 threshold_default = 200 # line detection votes threshold
 
+checker_index = 0 # which checker board in the image will be processed
+
 image_size = 400
 border_size = 20
 header_size = 230
@@ -130,8 +132,7 @@ def crop_and_rotate_image():
 
 
 def process_image():
-  global input_image_np, edge_detected_image_np, edge_detected_image_PIL, \
-         circles, circles_removed_image_np, circles_removed_image_PIL, \
+  global edge_detected_image_PIL, circles, circles_removed_image_np, circles_removed_image_PIL, \
          gray_image_np, region_PIL
   # photos (_PIL images) need to be global so that the garbage collector doesn't
   # clean them up and blank out the canvases
@@ -162,10 +163,10 @@ def process_image():
   scaled_brightness = 450/(200-brightness.get())-2
   # convert range 0-100 into range 0.25-2.5, with 50->1.0
   region_PIL = ImageEnhance.Brightness(region_PIL).enhance(scaled_brightness)
-  input_image_np = np.array(region_PIL)
+  region_np = np.array(region_PIL)
 
   log("Converting to grayscale")
-  gray_image_np = cv2.cvtColor(input_image_np, cv2.COLOR_BGR2GRAY)
+  gray_image_np = cv2.cvtColor(region_np, cv2.COLOR_BGR2GRAY)
 
   #log("Running Canny edge detection algorithm with parameters:\n" +
   #    "- min threshold=" + str(edge_min.get()) + "\n" +
@@ -174,7 +175,7 @@ def process_image():
   #    "- L" + str(gradient.get()) + " norm")
   log("Running Canny edge detection algorithm")
   # no point logging the parameters now I've turned off the UI for changing them
-  edge_detected_image_np = cv2.Canny(input_image_np,
+  edge_detected_image_np = cv2.Canny(region_np,
                               edge_min.get(), edge_max.get(),
                               apertureSize = sobel.get(),
                               L2gradient = (gradient.get()==2))
@@ -758,14 +759,17 @@ def select_rect(event):
   if not image_loaded:
     return
 
-def select_first_board(event):
+def select_next_board(event):
   import pdf2img
-  global selection_global, region_PIL
+  global selection_global, region_PIL, checker_index
   if not image_loaded:
     return
-  rects = pdf2img.get_checkerboards_from_img(np.array(region_PIL))
-  selection_global = rects[0]
-  log(f"\n get {len(rects)} with first board at {selection_global}\n")
+  rects = pdf2img.get_checkerboards_from_img(np.array(input_image_PIL))
+  selection_global = rects[checker_index]
+  log(f"\n get {len(rects)} with {checker_index} board at {selection_global}\n")
+  checker_index += 1
+  if checker_index == len(rects):
+    checker_index = 0
   threshold.set(choose_threshold(region_PIL))
 
   process_image() # this will crop and rotate, and update everything else
@@ -1193,7 +1197,7 @@ input_canvas.bind('<Double-Button-1>', zoom_out)
 input_canvas.bind("<Configure>", lambda x : draw_images()) # also draw the processed image
 input_canvas.bind('<z>', zoom_out)
 input_canvas.bind('<Enter>', select_rect)
-input_canvas.bind('<h>', select_first_board)
+input_canvas.bind('<Right>', select_next_board)
 input_canvas.focus_set()
 
 output_canvas.bind("<Configure>", lambda x: draw_board())

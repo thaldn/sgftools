@@ -28,8 +28,7 @@ def get_checkerboards_from_img(image, outimg = None, outtxt = None):
 
     #if it is too big or too small, it will not the invalid checkerboard
     subarea_crit = h * w / 23
-    checker_cont = [c for c in contours if h * w * 0.85 > cv2.contourArea(c) > subarea_crit]
-    subcheckers = sorted(checker_cont, key=lambda c: cv2.contourArea(c), reverse = True)
+    subcheckers = [c for c in contours if h * w * 0.85 > cv2.contourArea(c) > subarea_crit]
 
     i = 0
     offset = 8
@@ -52,11 +51,13 @@ def get_checkerboards_from_img(image, outimg = None, outtxt = None):
             y1, y2 = y2, y1
         x1, x2 = x1 - offset, x2 + offset
         y1, y2 = y1 - offset, y2 + offset
-        checkerboard = image[y1:y2, x1:x2]
         cv2.rectangle(img_txt, [x1, y1], [x2, y2], white_color, -1)
         checkers.append(np.array((x1, y1, x2, y2)))
 
+    checkers = sorted(checkers, key = lambda p: p[1])
+    for checker in checkers:
         if outimg:
+            checkerboard = image[checker[1]:checker[3], checker[0]:checker[2]]
             imgfile = f'{outimg}_p{i}.png'
             cv2.imwrite(imgfile, checkerboard)
         i+=1
