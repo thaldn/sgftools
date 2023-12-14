@@ -753,6 +753,29 @@ def update_selection_rect(event):
   selection_local[2:4] = (event.x, event.y)
   input_canvas.coords(sel_rect_id, tuple(selection_local))
 
+def select_rect(event):
+  input_canvas.focus_set()
+  if not image_loaded:
+    return
+
+def select_first_board(event):
+  import pdf2img
+  global selection_global, region_PIL
+  if not image_loaded:
+    return
+  rects = pdf2img.get_checkerboards_from_img(np.array(region_PIL))
+  selection_global = rects[0]
+  log(f"\n get {len(rects)} with first board at {selection_global}\n")
+  threshold.set(choose_threshold(region_PIL))
+
+  process_image() # this will crop and rotate, and update everything else
+
+  # Reset selection rectangle drawn on image
+  input_canvas.delete("all")
+  sel_rect_id = input_canvas.create_rectangle(0,0,0,0,
+                dash=(6,6), fill='', outline='green', width=3)
+  draw_images()
+
 def select_region():
   global selection_local, selection_global, sel_rect_id, region_PIL
 
@@ -1168,6 +1191,11 @@ input_canvas.bind('<B1-Motion>', update_selection_rect)
 input_canvas.bind('<ButtonRelease-1>', lambda x : select_region())
 input_canvas.bind('<Double-Button-1>', zoom_out)
 input_canvas.bind("<Configure>", lambda x : draw_images()) # also draw the processed image
+input_canvas.bind('<z>', zoom_out)
+input_canvas.bind('<Enter>', select_rect)
+input_canvas.bind('<h>', select_first_board)
+input_canvas.focus_set()
+
 output_canvas.bind("<Configure>", lambda x: draw_board())
 output_canvas.bind("<ButtonRelease-1>", edit_board)
 output_canvas.bind("<ButtonRelease-3>", edit_board)

@@ -10,7 +10,8 @@ black_lmt = 180
 white_color = (255, 255, 255)
 black_color = (0, 0, 0)
 
-def get_checkerboards_from_pdfimg(image, outimg, outtxt):
+# image contains one big or several checker boards in one whole pdf page
+def get_checkerboards_from_img(image, outimg = None, outtxt = None):
     img = image.copy()
     img_txt = image.copy()
     h, w, c = img.shape
@@ -25,13 +26,14 @@ def get_checkerboards_from_pdfimg(image, outimg, outtxt):
     #contours, hierarchy = cv2.findContours(dst, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     contours, hierarchy = cv2.findContours(dst, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
+    #if it is too big or too small, it will not the invalid checkerboard
     subarea_crit = h * w / 23
-    checker_cont = [c for c in contours if h * w * 0.8 > cv2.contourArea(c) > subarea_crit]
+    checker_cont = [c for c in contours if h * w * 0.85 > cv2.contourArea(c) > subarea_crit]
     subcheckers = sorted(checker_cont, key=lambda c: cv2.contourArea(c), reverse = True)
 
     i = 0
     offset = 8
-    #The biggest contour is the whole image. ??? so, it is ignored here.
+    checkers = []
     for b in subcheckers:
         # 多边形拟合
         epsilon = 0.1 * cv2.arcLength(b, True)
@@ -52,11 +54,16 @@ def get_checkerboards_from_pdfimg(image, outimg, outtxt):
         y1, y2 = y1 - offset, y2 + offset
         checkerboard = image[y1:y2, x1:x2]
         cv2.rectangle(img_txt, [x1, y1], [x2, y2], white_color, -1)
+        checkers.append(np.array((x1, y1, x2, y2)))
 
-        imgfile = f'{outimg}_p{i}.png'
-        cv2.imwrite(imgfile, checkerboard)
+        if outimg:
+            imgfile = f'{outimg}_p{i}.png'
+            cv2.imwrite(imgfile, checkerboard)
         i+=1
-    cv2.imwrite(img_txt, outtxt)
+
+    if outtxt:
+        cv2.imwrite(img_txt, outtxt)
+    return checkers
 
 def get_allcheckers_frompdf(filename, start, end=-1, step=1):
         if not os.path.exists(outputdir):
@@ -74,7 +81,7 @@ def get_allcheckers_frompdf(filename, start, end=-1, step=1):
                 page = pdf[pg-1]
                 pix = page.get_pixmap(matrix=trans, alpha=False)
                 outimgprefix = os.path.join(outputdir, f"img{pg}")
-                outtext = os.path.join(Path(filename).parent, f"{pg}-ocr.png"))
+                outtext = os.path.join(Path(filename).parent, f"{pg}-ocr.png")
                 image = np.frombuffer(buffer=pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, -1))
-                get_checkerboards_from_pdfimg(image, outimgprefix, outtext)
+                get_checkerboards_from_img(image, outimgprefix, outtext)
         pdf.close()
