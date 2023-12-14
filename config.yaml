@@ -4,16 +4,20 @@
   contrast: 50
   line_threshold: 200
   black_stone_threshold: 128
+
+# 清晰印刷，棋盘背景灰色
 -
-  brightness: 72
-  contrast: 67
-  line_threshold: 152
-  black_stone_threshold: 120
+  brightness: 75
+  contrast: 72
+  line_threshold: 155
+  black_stone_threshold: 130
+
+# 护眼纸印刷，棋盘背景浅黄色
 -
-  brightness: 55
-  contrast: 53
-  line_threshold: 105
-  black_stone_threshold: 120
+  brightness: 63
+  contrast: 58
+  line_threshold: 125
+  black_stone_threshold: 135
 -
   brightness: 80
   contrast: 50

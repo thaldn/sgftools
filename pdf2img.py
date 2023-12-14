@@ -11,13 +11,13 @@ white_color = (255, 255, 255)
 black_color = (0, 0, 0)
 
 # image contains one big or several checker boards in one whole pdf page
-def get_checkerboards_from_img(image, outimg = None, outtxt = None):
+def get_checkerboards_from_img(image, offset:int = 8, outimg = None, outtxt = None):
     img = image.copy()
     img_txt = image.copy()
     h, w, c = img.shape
     frame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ret, mask = cv2.threshold(frame, black_lmt, white_lmt, cv2.THRESH_BINARY)
-    erodeim = cv2.erode(mask, None, iterations=1)  # 腐蚀
+    erodeim = cv2.erode(mask, None, iterations=2)  # 腐蚀
     dilateim = cv2.dilate(erodeim, None, iterations=3)
 
     dst = cv2.bitwise_and(img, img, mask=dilateim)
@@ -27,11 +27,10 @@ def get_checkerboards_from_img(image, outimg = None, outtxt = None):
     contours, hierarchy = cv2.findContours(dst, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
     #if it is too big or too small, it will not the invalid checkerboard
-    subarea_crit = h * w / 23
+    subarea_crit = h * w / 29
     subcheckers = [c for c in contours if h * w * 0.85 > cv2.contourArea(c) > subarea_crit]
 
     i = 0
-    offset = 8
     checkers = []
     for b in subcheckers:
         # 多边形拟合
@@ -54,7 +53,8 @@ def get_checkerboards_from_img(image, outimg = None, outtxt = None):
         cv2.rectangle(img_txt, [x1, y1], [x2, y2], white_color, -1)
         checkers.append(np.array((x1, y1, x2, y2)))
 
-    checkers = sorted(checkers, key = lambda p: p[1])
+    # sort the checkers according their y position
+    checkers = sorted(checkers, key = lambda p: p[1]+p[3])
     for checker in checkers:
         if outimg:
             checkerboard = image[checker[1]:checker[3], checker[0]:checker[2]]

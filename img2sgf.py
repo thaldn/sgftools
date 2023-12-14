@@ -47,6 +47,7 @@ except ImportError:
 from datetime import datetime
 import os, sys, math, string
 
+select_config = 1
 BOARD_SIZE = 19
 edge_min_default = 50 # edge detection min threshold
 edge_max_default = 200
@@ -105,6 +106,7 @@ valid_grid   = False
 board_ready  = False
 color_white = (255, 255, 255)
 color_black = (0, 0, 0)
+stone_size = 9  # the radius of stone, it will be updated with the image
 
 selection_local = np.array((0,0,0,0))
   # selection rectangle x1, y1, x2, y2 relative to current region
@@ -129,6 +131,8 @@ def crop_and_rotate_image():
   rotation_centre = tuple(rectangle_centre(selection_global))
   region_PIL = input_image_PIL.rotate(angle=-rotate_angle.get(), fillcolor="white",
                                  center = rotation_centre).crop(selection_global)
+  # Set line detection threshold appropriate for this image size:
+  threshold.set(choose_threshold(region_PIL))
 
 
 def process_image():
@@ -141,6 +145,8 @@ def process_image():
   # global so that other functions can move and redraw the line
   global found_grid, valid_grid, board_ready
   # keep other functions informed of processing status
+  global stone_size
+  # keep the stone_size which will be used as offset etc
 
   if not image_loaded:
     return
@@ -204,10 +210,12 @@ def process_image():
   # For each circle, erase the bounding box and replace by a single pixel in the middle
   # This makes it easier to detect grid lines when
   # there are lots of stones on top of the line
+  radius = []
   for i in range(len(circles)):
     xc, yc, r = circles[i,:]
     xc, yc, r = (int(xc), int(yc), int(r))
     r = r+2 # need +2 because circle edges can stick out a little past the bounding box
+    radius.append(r)
     ul = (int(round(xc-r)), int(round(yc-r)))
     lr = (int(round(xc+r)), int(round(yc+r)))
     middle = (int(round(xc)), int(round(yc)))
@@ -221,6 +229,9 @@ def process_image():
   find_grid()
   draw_images()
   draw_histogram(stone_brightnesses) # this should erase the histogram from any previous board
+  stone_size = int(np.median(radius))
+  log(f"the stone's radius is {stone_size}\n")
+  return stone_size
 
 
 def draw_histogram(stone_brightnesses):
@@ -532,9 +543,7 @@ def average_intensity(i, j, with_step=False):
 
   if with_step:
     step_num, res = ocr_1(stone_image)
-    #if step_num == 0:  #sometimes, "9" is judged as "0"
-    #  step_num = 9;
-    if res:
+    if step_num:
       steps[step_num] = [i, j]
       log('step: {}: [{}, {}], position: [{}:{}, {}:{}]'.format(step_num, i, j, ymin, ymax, xmin, xmax))
 
@@ -668,8 +677,8 @@ def choose_threshold(img):
   # Guess the best threshold for Canny line detection
   # Generally, smaller images work better with smaller thresholds
   x = min(img.size)
-  t = int(x/12.8 + 16) # just guessing the parameters, this seems to work OK
-  t = max(max(t, 20), threshold_default) # restrict to t between 20 and 200
+  t = int(x/4.5 + 36) # just guessing the parameters, this seems to work OK
+  t = min(max(t, 50), threshold_default) # restrict to t between 20 and 200
   return int(t)
 
 # read configuration, 0 or invalid will load default configuration.
@@ -694,17 +703,18 @@ def load_default(i:int = 0):
 def initialise_parameters():
   # common to open_file() and screen_capture()
   global region_PIL, image_loaded, found_grid, valid_grid, \
-         board_ready, board_edited, board_alignment, \
+         board_ready, board_edited, board_alignment, checker_index,\
          previous_rotation_angle, black_stone_threshold, selection_global
 
   image_loaded = True
   found_grid   = False
   valid_grid   = False
   board_ready  = False
+  checker_index = 0
   save_button.configure(state=tk.DISABLED)
   board_alignment = [Alignment.LEFT, Alignment.TOP]
   reset_button.configure(state=tk.DISABLED)
-  load_default(0)
+  load_default(select_config)
   rotate_angle.set(0)
   previous_rotation_angle = 0
   contrast.set(contrast_default)
@@ -714,7 +724,6 @@ def initialise_parameters():
   region_PIL = input_image_PIL.copy()
   selection_global = np.array([0,0] + list(region_PIL.size))
   rotate_angle.set(0)
-  threshold.set(choose_threshold(region_PIL))
 
   process_image()
   draw_images()
@@ -764,13 +773,16 @@ def select_next_board(event):
   global selection_global, region_PIL, checker_index
   if not image_loaded:
     return
-  rects = pdf2img.get_checkerboards_from_img(np.array(input_image_PIL))
+  rects = pdf2img.get_checkerboards_from_img(np.array(input_image_PIL), stone_size)
+  gonum = len(rects)
+  log(f"get {gonum} go boards.")
+  if gonum == 0:
+    return
   selection_global = rects[checker_index]
-  log(f"\n get {len(rects)} with {checker_index} board at {selection_global}\n")
+  log(f" with {checker_index} board at {selection_global}\n")
   checker_index += 1
   if checker_index == len(rects):
     checker_index = 0
-  threshold.set(choose_threshold(region_PIL))
 
   process_image() # this will crop and rotate, and update everything else
 
@@ -822,9 +834,6 @@ def select_region():
   new_hsize = int(selection_global[2]-selection_global[0])
   new_vsize = int(selection_global[3]-selection_global[1])
   log("\nZoomed in.  Region size " + str(new_hsize) + "x" + str(new_vsize))
-
-  # Set line detection threshold appropriate for this image size:
-  threshold.set(choose_threshold(region_PIL))
 
   process_image() # this will crop and rotate, and update everything else
 
