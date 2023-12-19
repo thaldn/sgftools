@@ -12,6 +12,13 @@
   line_threshold: 155
   black_stone_threshold: 130
 
+# 清晰印刷，棋盘背景灰色，黑色棋子偏重
+-
+  brightness: 67
+  contrast: 51
+  line_threshold: 132
+  black_stone_threshold: 128
+
 # 护眼纸印刷，棋盘背景浅黄色
 -
   brightness: 63

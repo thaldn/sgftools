@@ -128,11 +128,16 @@ def rectangle_centre(a):
 
 def crop_and_rotate_image():
   global region_PIL
+  log("prepare image in region to process")
   rotation_centre = tuple(rectangle_centre(selection_global))
   region_PIL = input_image_PIL.rotate(angle=-rotate_angle.get(), fillcolor="white",
                                  center = rotation_centre).crop(selection_global)
-  # Set line detection threshold appropriate for this image size:
-  threshold.set(choose_threshold(region_PIL))
+
+
+def prepare_image():
+  global selectin_global
+  region_size = [selection_global[3] - selection_global[1], selection_global[2] - selection_global[0]]
+  threshold.set(choose_threshold(region_size))
 
 
 def process_image():
@@ -672,11 +677,11 @@ def log(msg):
   log_text.see(tk.END) # scroll to end when the text gets long
 
 
-def choose_threshold(img):
+def choose_threshold(img_size):
   # img is an image in PIL format
   # Guess the best threshold for Canny line detection
   # Generally, smaller images work better with smaller thresholds
-  x = min(img.size)
+  x = min(img_size)
   t = int(x/4.5 + 36) # just guessing the parameters, this seems to work OK
   t = min(max(t, 50), threshold_default) # restrict to t between 20 and 200
   return int(t)
@@ -699,6 +704,7 @@ def load_default(i:int = 0):
       black_stone_threshold_default = 128 # brightness on a scale of 0-255
       #threshold_default = 80 # line detection votes threshold
       threshold_default = 200 # line detection votes threshold
+
 
 def initialise_parameters():
   # common to open_file() and screen_capture()
@@ -725,9 +731,6 @@ def initialise_parameters():
   selection_global = np.array([0,0] + list(region_PIL.size))
   rotate_angle.set(0)
 
-  process_image()
-  draw_images()
-
 
 def open_file(input_file = None):
   global input_image_PIL
@@ -747,6 +750,8 @@ def open_file(input_file = None):
     log("Image size " + str(input_image_PIL.size[0]) + "x" +
                         str(input_image_PIL.size[1]))
     initialise_parameters()
+    process_image()
+    draw_images()
 
 
 # The next three functions collectively implement click and drag
@@ -784,6 +789,7 @@ def select_next_board(event):
   if checker_index == len(rects):
     checker_index = 0
 
+  prepare_image()
   process_image() # this will crop and rotate, and update everything else
 
   # Reset selection rectangle drawn on image
@@ -835,7 +841,8 @@ def select_region():
   new_vsize = int(selection_global[3]-selection_global[1])
   log("\nZoomed in.  Region size " + str(new_hsize) + "x" + str(new_vsize))
 
-  process_image() # this will crop and rotate, and update everything else
+  prepare_image() # get image in the selected region
+  process_image()
 
   # Reset selection rectangle drawn on image
   input_canvas.delete("all")
@@ -850,6 +857,8 @@ def zoom_out(event):
     region_PIL = input_image_PIL.copy()
     log("Zoomed out to full size")
     initialise_parameters()
+    process_image()
+    draw_images()
 
 
 # The next three functions are for changing the black_stone_threshold setting
@@ -892,6 +901,8 @@ def screen_capture():
   log("Image size " + str(input_image_PIL.size[0]) + "x" +
                       str(input_image_PIL.size[1]))
   initialise_parameters()
+  process_image()
+  draw_images()
 
 
 def to_SGF(board):
