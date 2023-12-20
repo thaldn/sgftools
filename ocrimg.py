@@ -26,6 +26,7 @@ def height(row):
     top, bottom = bound_y(row)
     return bottom - top
 
+
 def write_ocr_result(ocr_results, output_path: str, offset: int = 5, mode: str = "w", encoding: str = "utf-8"):
     # 按照 y中点 坐标排序
     sorted_by_y = sorted(ocr_results, key=lambda x: center_y(x))
@@ -54,12 +55,32 @@ def write_ocr_result(ocr_results, output_path: str, offset: int = 5, mode: str =
                 pos, (text, prob) = item
                 line += f"{text} "
             line = line.rstrip()
-            paragraph += f"{line}"
-            if abs(crb - rb) > 3*offset:
+            # 不完美分段
+            if crb - rb > 5 * offset or abs(clb - lb) > 5 * offset:
+                f.write(f"{paragraph}\n")
+                paragraph = line
+                lb, rb = clb, crb
+            elif rb - crb > 5 * offset:
+                paragraph += f"{line}"
                 f.write(f"{paragraph}\n")
                 paragraph = ""
-            lb, rb = clb, crb
+                lb, rb = 0, 0
+            else:
+                paragraph += f"{line}"
+                lb, rb = clb, crb
         f.write(f"{paragraph}")
+
+
+def img_ocr(img, outfile, lang = 'ch', offset = 5):
+    if lang == 'ch':
+        ocr_engine = ocr_engine_ch
+    elif lang == 'en':
+        ocr_engine = ocr_engine_en    else:
+        raise ValueError("不支持的语言")
+    result = ocr_engine.ocr(img, cls=False)[0]
+    write_ocr_result(result, outfile, offset)
+    return result
+
 
 def ocr_from_image(input_path: str, lang: str = 'ch', output_path: str = None, offset: float = 5., use_double_columns: bool = False, show_log: bool = False):
     try:

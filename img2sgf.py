@@ -30,6 +30,7 @@ import numpy as np
 import os
 import yaml
 import time
+import argparse
 from sklearn.cluster import AgglomerativeClustering
 from enum import Enum, IntEnum
 from bisect import bisect_left
@@ -47,7 +48,6 @@ except ImportError:
 from datetime import datetime
 import os, sys, math, string
 
-select_config = 1
 BOARD_SIZE = 19
 edge_min_default = 50 # edge detection min threshold
 edge_max_default = 200
@@ -135,7 +135,7 @@ def crop_and_rotate_image():
 
 
 def prepare_image():
-  global selectin_global
+  global selectin_global, threshold
   region_size = [selection_global[3] - selection_global[1], selection_global[2] - selection_global[0]]
   threshold.set(choose_threshold(region_size))
 
@@ -148,6 +148,7 @@ def process_image():
   # numpy images (_np) are used by other functions
   global threshold_hist, threshold_line
   # global so that other functions can move and redraw the line
+  global sobel, gradient
   global found_grid, valid_grid, board_ready
   # keep other functions informed of processing status
   global stone_size
@@ -187,7 +188,7 @@ def process_image():
   log("Running Canny edge detection algorithm")
   # no point logging the parameters now I've turned off the UI for changing them
   edge_detected_image_np = cv2.Canny(region_np,
-                              edge_min.get(), edge_max.get(),
+                              edge_min_default, edge_max_default,
                               apertureSize = sobel.get(),
                               L2gradient = (gradient.get()==2))
   edge_detected_image_PIL = Image.fromarray(edge_detected_image_np)
@@ -329,6 +330,7 @@ def get_cluster_centres(model, points):
 
 def cluster_lines(hlines, vlines):
   global found_grid
+  global threshold_subfigure
 
   hclusters = find_clusters_fixed_threshold(threshold.get(), Direction.HORIZ)
   hcentres = get_cluster_centres(hclusters, hlines)
@@ -502,7 +504,7 @@ def closest_grid_index(p):
 def ocr_2(stone_image):
     result = numocr.image_to_string(stone_image, config='--psm 10 --oem 3 -c tessedit_char_whitelist=0123456789').strip()
     if result.isdigit():
-      step_num = eval(result)
+      step_num = int(result)
       return (step_num, True)
     return (0, False)
 
@@ -511,7 +513,7 @@ def ocr_1(stone_image):
     if len(out) > 0:
       result = out[0]['text'].strip()
       if result.isdigit():
-        step_num = eval(result)
+        step_num = int(result)
         return (step_num, True)
 
     return (0, False)
@@ -669,14 +671,6 @@ def scale_image(img, c):
   return (ImageTk.PhotoImage(scaled_image), scale)
 
 
-# Part 3: GUI functions
-
-
-def log(msg):
-  log_text.insert(tk.END, msg + "\n")
-  log_text.see(tk.END) # scroll to end when the text gets long
-
-
 def choose_threshold(img_size):
   # img is an image in PIL format
   # Guess the best threshold for Canny line detection
@@ -693,6 +687,7 @@ def load_default(i:int = 0):
     content = file.read()
     data = yaml.load(content, Loader=yaml.FullLoader)
     if i in range(len(data)):
+      log(f"load configuration: {i}")
       contrast_default = data[i]['contrast']
       brightness_default = data[i]['brightness']
       black_stone_threshold_default = data[i]['black_stone_threshold']
@@ -705,7 +700,6 @@ def load_default(i:int = 0):
       #threshold_default = 80 # line detection votes threshold
       threshold_default = 200 # line detection votes threshold
 
-
 def initialise_parameters():
   # common to open_file() and screen_capture()
   global region_PIL, image_loaded, found_grid, valid_grid, \
@@ -717,19 +711,31 @@ def initialise_parameters():
   valid_grid   = False
   board_ready  = False
   checker_index = 0
-  save_button.configure(state=tk.DISABLED)
   board_alignment = [Alignment.LEFT, Alignment.TOP]
-  reset_button.configure(state=tk.DISABLED)
   load_default(select_config)
-  rotate_angle.set(0)
   previous_rotation_angle = 0
-  contrast.set(contrast_default)
-  brightness.set(brightness_default)
   black_stone_threshold = black_stone_threshold_default
 
   region_PIL = input_image_PIL.copy()
   selection_global = np.array([0,0] + list(region_PIL.size))
+  reinit_gui()
+
+
+# Part 3: GUI functions
+
+def reinit_gui():
+  global save_button, reset_button, contrast, brightness, rotate_angle
+  save_button.configure(state=tk.DISABLED)
+  reset_button.configure(state=tk.DISABLED)
+  contrast.set(contrast_default)
+  brightness.set(brightness_default)
   rotate_angle.set(0)
+
+
+def log(msg):
+  global log_text
+  log_text.insert(tk.END, msg + "\n")
+  log_text.see(tk.END) # scroll to end when the text gets long
 
 
 def open_file(input_file = None):
@@ -769,6 +775,7 @@ def update_selection_rect(event):
   input_canvas.coords(sel_rect_id, tuple(selection_local))
 
 def select_rect(event):
+  global input_canvas
   input_canvas.focus_set()
   if not image_loaded:
     return
@@ -891,7 +898,7 @@ def apply_black_thresh(event):
 
 
 def screen_capture():
-  global input_image_PIL
+  global input_image_PIL, main_window
   main_window.state("iconic")
   time.sleep(0.3) #otherwise capture itself
   input_image_PIL = ImageGrab.grab()
@@ -1070,6 +1077,7 @@ def draw_images():
 
 
 def draw_board():
+  global output_canvas
   output_canvas.configure(bg="#d9d9d9")
   output_canvas.delete("all")
   if not board_ready:
@@ -1174,166 +1182,6 @@ def edit_board(event):
   draw_board()
 
 
-# Part 4: create GUI and main loop
-
-# UI is main window with 3 columns, and optional settings window with 2 columns
-# Main window layout:
-#
-#  input_frame  | processed_frame  | output_frame
-#  -------------+------------------+-------------
-#  input_canvas | processed_canvas | output_canvas
-#
-#  Frames contain buttons and text; canvases contain images
-
-main_window = tk.Tk()
-main_window.configure(background="#FFFFC0")
-main_window.geometry(str(main_width) + "x" + str(main_height))
-main_window.title("Image to SGF")
-
-input_frame = tk.Frame(main_window)
-input_frame.grid(row=0, column=0, pady=border_size)
-processed_frame = tk.Frame(main_window)
-processed_frame.grid(row=0, column=1, pady=border_size)
-output_frame = tk.Frame(main_window)
-output_frame.grid(row=0, column=2, pady=border_size)
-
-main_window.rowconfigure(0, weight=0) # top row not resizable
-main_window.rowconfigure(1, weight=1) # second row should resize
-main_window.columnconfigure(0, weight=1)
-main_window.columnconfigure(1, weight=1)
-main_window.columnconfigure(2, weight=1)
-
-input_canvas = tk.Canvas(main_window)
-input_canvas.grid(row=1, column=0, sticky="nsew", padx=border_size, pady=border_size)
-processed_canvas = tk.Canvas(main_window)
-processed_canvas.grid(row=1, column=1, sticky="nsew", pady=border_size)
-output_canvas = tk.Canvas(main_window)
-output_canvas.grid(row=1, column=2, sticky="nsew", padx=border_size, pady=border_size)
-
-input_canvas.bind('<Button-1>', init_selection_rect)
-input_canvas.bind('<B1-Motion>', update_selection_rect)
-input_canvas.bind('<ButtonRelease-1>', lambda x : select_region())
-input_canvas.bind('<Double-Button-1>', zoom_out)
-input_canvas.bind("<Configure>", lambda x : draw_images()) # also draw the processed image
-input_canvas.bind('<z>', zoom_out)
-input_canvas.bind('<Enter>', select_rect)
-input_canvas.bind('<Right>', select_next_board)
-input_canvas.focus_set()
-
-output_canvas.bind("<Configure>", lambda x: draw_board())
-output_canvas.bind("<ButtonRelease-1>", edit_board)
-output_canvas.bind("<ButtonRelease-3>", edit_board)
-
-input_text = tk.Label(input_frame, text="Input image")
-input_text.grid(row=0, columnspan=2, pady=10)
-open_button = tk.Button(input_frame, text="open", command = open_file)
-open_button.grid(row=1, column=0)
-capture_button = tk.Button(input_frame, text="capture", command = screen_capture)
-capture_button.grid(row=1, column=1)
-input_instructions = tk.Label(input_frame,
-                              text = "click and drag to zoom\ndouble-click to reset")
-input_instructions.grid(row=2, columnspan=2, pady=10)
-
-processed_text = tk.Label(processed_frame, text="Processed image")
-processed_text.grid(row=0, columnspan=2, pady=10)
-settings_button = tk.Button(processed_frame, text="show settings", command = toggle_settings)
-settings_button.grid(row=1, column=0)
-log_button = tk.Button(processed_frame, text="show log", command = toggle_log)
-log_button.grid(row=1, column=1)
-show_circles = tk.IntVar() # whether or not to display the detected circles
-show_circles.set(1)
-show_circles_button = tk.Checkbutton(processed_frame, text="show detected circles",
-                                     variable=show_circles,
-                                     command=draw_images)
-show_circles_button.grid(row=2, pady=10)
-rotate_label = tk.Label(processed_frame, text="rotate")
-rotate_label.grid(row=3, columnspan=2)
-rotate_angle = tk.Scale(processed_frame, from_=-45, to=45,
-                        orient=tk.HORIZONTAL, length=image_size)
-rotate_angle.grid(row=4, columnspan=2, sticky="ew")
-rotate_angle.bind("<ButtonRelease-1>", lambda x: process_image())
-
-processed_frame.columnconfigure(0, weight=1)
-processed_frame.columnconfigure(1, weight=1)
-
-output_text = tk.Label(output_frame, text="Detected board position")
-output_text.grid(row=0, columnspan=2, pady=10)
-save_button = tk.Button(output_frame, text="save",
-                        command = save_SGF, state = tk.DISABLED)
-save_button.grid(row=1, column=0)
-reset_button = tk.Button(output_frame, text="reset",
-                         command = reset_board, state = tk.DISABLED)
-reset_button.grid(row=1, column=1)
-output_instructions = tk.Label(output_frame,
-             text =
-'''Click on board to change between empty,
-black stone and white stone.
-
-For side/corner positions,
-click on circle outside board
-to choose which side/corner.
-''')
-output_instructions.grid(row=2, columnspan=2, pady=(10,0))
-
-stm_frame = tk.Frame(output_frame)
-stm_frame.grid(row=3)
-side_to_move = tk.IntVar()
-side_to_move.set(1)
-black_to_play = tk.Radiobutton(stm_frame, text="black", variable=side_to_move, value=1)
-white_to_play = tk.Radiobutton(stm_frame, text="white", variable=side_to_move, value=2)
-to_play_label = tk.Label(stm_frame, text="to play")
-black_to_play.pack(side=tk.LEFT)
-white_to_play.pack(side=tk.LEFT)
-to_play_label.pack(side=tk.LEFT)
-
-# Settings window layout is two frames side by side
-#   settings1 | settings2
-#
-#  settings1 has brightness/contrast settings and stone brightness histogram
-#  settings2 has line threshold setting and lines plot
-
-
-settings_window = tk.Toplevel()
-settings_window.title("Img2SGF settings")
-settings_window.geometry(str(settings_width) + "x" + str(settings_height))
-settings_window.protocol("WM_DELETE_WINDOW", lambda : toggle_settings(False))
-
-settings1 = tk.Frame(settings_window)
-settings1.grid(row=0, column=0, sticky="nsew", padx=(0,5))
-settings2 = tk.Frame(settings_window)
-settings2.grid(row=0, column=1, sticky="nsew", padx=(5,0))
-
-contrast_label = tk.Label(settings1, text="Contrast")
-contrast_label.grid(row=0, sticky="nsew")
-contrast = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
-contrast.set(contrast_default)
-contrast.grid(row=1, padx=15, sticky="nsew")
-contrast.bind("<ButtonRelease-1>", lambda x: process_image())
-brightness_label = tk.Label(settings1, text="Brightness")
-brightness_label.grid(row=2, padx=15, sticky="nsew")
-brightness = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
-brightness.set(brightness_default)
-brightness.grid(row=3, padx=15, sticky="nsew")
-brightness.bind("<ButtonRelease-1>", lambda x: process_image())
-
-# Edge detection parameters hidden: they don't seem to help
-edge_label = tk.Label(settings1, text="Canny edge detection parameters")
-#edge_label.grid(row=5, pady=15)
-edge_min_label = tk.Label(settings1, text="min threshold")
-#edge_min_label.grid(row=6)
-edge_min = tk.Scale(settings1, from_=0, to=255, orient=tk.HORIZONTAL)
-edge_min.set(edge_min_default)
-#edge_min.grid(row=7)
-#edge_min.bind("<ButtonRelease-1>", lambda x: process_image())
-edge_max_label = tk.Label(settings1, text="max threshold")
-#edge_max_label.grid(row=8, pady=(20,0))
-edge_max = tk.Scale(settings1, from_=0, to=255, orient=tk.HORIZONTAL)
-edge_max.set(edge_max_default)
-#edge_max.grid(row=9)
-#edge_max.bind("<ButtonRelease-1>", lambda x: process_image())
-sobel_label = tk.Label(settings1, text="Sobel aperture")
-#sobel_label.grid(row=10, pady=(20,0))
-
 def odd_only(n):
   # Restrict Sobel value scale to odd numbers
   # Thanks to https://stackoverflow.com/questions/20710514/selecting-odd-values-using-tkinter-scale for the hack
@@ -1344,107 +1192,281 @@ def odd_only(n):
     n=7
   sobel.set(n)
 
-sobel = tk.Scale(settings1, from_=3, to=7, orient=tk.HORIZONTAL,
-           command=odd_only, length=100)
-sobel.set(sobel_default)
+
+# Part 4: create GUI and main loop
+# UI is main window with 3 columns, and optional settings window with 2 columns
+# Main window layout:
+#
+#  input_frame  | processed_frame  | output_frame
+#  -------------+------------------+-------------
+#  input_canvas | processed_canvas | output_canvas
+#
+#  Frames contain buttons and text; canvases contain images
+
+def gui():
+  global threshold, input_canvas, output_canvas, main_window
+  global save_button, reset_button, contrast, brightness, rotate_angle
+  global sobel, gradient, threshold_subfigure, threshold_line, threshold_plot
+  global processed_canvas, show_circles, black_thresh_subfigure, black_thresh_hist
+  global log_window, log_text, log_button, settings_window, settings_button
+  global side_to_move
+  main_window = tk.Tk()
+  main_window.configure(background="#FFFFC0")
+  main_window.geometry(str(main_width) + "x" + str(main_height))
+  main_window.title("Image to SGF")
+
+  input_frame = tk.Frame(main_window)
+  input_frame.grid(row=0, column=0, pady=border_size)
+  processed_frame = tk.Frame(main_window)
+  processed_frame.grid(row=0, column=1, pady=border_size)
+  output_frame = tk.Frame(main_window)
+  output_frame.grid(row=0, column=2, pady=border_size)
+
+  main_window.rowconfigure(0, weight=0) # top row not resizable
+  main_window.rowconfigure(1, weight=1) # second row should resize
+  main_window.columnconfigure(0, weight=1)
+  main_window.columnconfigure(1, weight=1)
+  main_window.columnconfigure(2, weight=1)
+
+  input_canvas = tk.Canvas(main_window)
+  input_canvas.grid(row=1, column=0, sticky="nsew", padx=border_size, pady=border_size)
+  processed_canvas = tk.Canvas(main_window)
+  processed_canvas.grid(row=1, column=1, sticky="nsew", pady=border_size)
+  output_canvas = tk.Canvas(main_window)
+  output_canvas.grid(row=1, column=2, sticky="nsew", padx=border_size, pady=border_size)
+
+  input_canvas.bind('<Button-1>', init_selection_rect)
+  input_canvas.bind('<B1-Motion>', update_selection_rect)
+  input_canvas.bind('<ButtonRelease-1>', lambda x : select_region())
+  input_canvas.bind('<Double-Button-1>', zoom_out)
+  input_canvas.bind("<Configure>", lambda x : draw_images()) # also draw the processed image
+  input_canvas.bind('<z>', zoom_out)
+  input_canvas.bind('<Enter>', select_rect)
+  input_canvas.bind('<Right>', select_next_board)
+  input_canvas.focus_set()
+
+  output_canvas.bind("<Configure>", lambda x: draw_board())
+  output_canvas.bind("<ButtonRelease-1>", edit_board)
+  output_canvas.bind("<ButtonRelease-3>", edit_board)
+
+  input_text = tk.Label(input_frame, text="Input image")
+  input_text.grid(row=0, columnspan=2, pady=10)
+  open_button = tk.Button(input_frame, text="open", command = open_file)
+  open_button.grid(row=1, column=0)
+  capture_button = tk.Button(input_frame, text="capture", command = screen_capture)
+  capture_button.grid(row=1, column=1)
+  input_instructions = tk.Label(input_frame,
+                                text = "click and drag to zoom\ndouble-click to reset")
+  input_instructions.grid(row=2, columnspan=2, pady=10)
+
+  processed_text = tk.Label(processed_frame, text="Processed image")
+  processed_text.grid(row=0, columnspan=2, pady=10)
+  settings_button = tk.Button(processed_frame, text="show settings", command = toggle_settings)
+  settings_button.grid(row=1, column=0)
+  log_button = tk.Button(processed_frame, text="show log", command = toggle_log)
+  log_button.grid(row=1, column=1)
+  show_circles = tk.IntVar() # whether or not to display the detected circles
+  show_circles.set(1)
+  show_circles_button = tk.Checkbutton(processed_frame, text="show detected circles",
+                                       variable=show_circles,
+                                       command=draw_images)
+  show_circles_button.grid(row=2, pady=10)
+  rotate_label = tk.Label(processed_frame, text="rotate")
+  rotate_label.grid(row=3, columnspan=2)
+  rotate_angle = tk.Scale(processed_frame, from_=-45, to=45,
+                          orient=tk.HORIZONTAL, length=image_size)
+  rotate_angle.grid(row=4, columnspan=2, sticky="ew")
+  rotate_angle.bind("<ButtonRelease-1>", lambda x: process_image())
+
+  processed_frame.columnconfigure(0, weight=1)
+  processed_frame.columnconfigure(1, weight=1)
+
+  output_text = tk.Label(output_frame, text="Detected board position")
+  output_text.grid(row=0, columnspan=2, pady=10)
+  save_button = tk.Button(output_frame, text="save",
+                          command = save_SGF, state = tk.DISABLED)
+  save_button.grid(row=1, column=0)
+  reset_button = tk.Button(output_frame, text="reset",
+                           command = reset_board, state = tk.DISABLED)
+  reset_button.grid(row=1, column=1)
+  output_instructions = tk.Label(output_frame,
+               text =
+  '''Click on board to change between empty,
+  black stone and white stone.
+
+  For side/corner positions,
+  click on circle outside board
+  to choose which side/corner.
+  ''')
+  output_instructions.grid(row=2, columnspan=2, pady=(10,0))
+
+  stm_frame = tk.Frame(output_frame)
+  stm_frame.grid(row=3)
+  side_to_move = tk.IntVar()
+  side_to_move.set(1)
+  black_to_play = tk.Radiobutton(stm_frame, text="black", variable=side_to_move, value=1)
+  white_to_play = tk.Radiobutton(stm_frame, text="white", variable=side_to_move, value=2)
+  to_play_label = tk.Label(stm_frame, text="to play")
+  black_to_play.pack(side=tk.LEFT)
+  white_to_play.pack(side=tk.LEFT)
+  to_play_label.pack(side=tk.LEFT)
+
+# Settings window layout is two frames side by side
+#   settings1 | settings2
+#
+#  settings1 has brightness/contrast settings and stone brightness histogram
+#  settings2 has line threshold setting and lines plot
+
+
+  settings_window = tk.Toplevel()
+  settings_window.title("Img2SGF settings")
+  settings_window.geometry(str(settings_width) + "x" + str(settings_height))
+  settings_window.protocol("WM_DELETE_WINDOW", lambda : toggle_settings(False))
+
+  settings1 = tk.Frame(settings_window)
+  settings1.grid(row=0, column=0, sticky="nsew", padx=(0,5))
+  settings2 = tk.Frame(settings_window)
+  settings2.grid(row=0, column=1, sticky="nsew", padx=(5,0))
+
+  contrast_label = tk.Label(settings1, text="Contrast")
+  contrast_label.grid(row=0, sticky="nsew")
+  contrast = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
+  contrast.set(contrast_default)
+  contrast.grid(row=1, padx=15, sticky="nsew")
+  contrast.bind("<ButtonRelease-1>", lambda x: process_image())
+  brightness_label = tk.Label(settings1, text="Brightness")
+  brightness_label.grid(row=2, padx=15, sticky="nsew")
+  brightness = tk.Scale(settings1, from_=0, to=100, orient=tk.HORIZONTAL)
+  brightness.set(brightness_default)
+  brightness.grid(row=3, padx=15, sticky="nsew")
+  brightness.bind("<ButtonRelease-1>", lambda x: process_image())
+
+# Edge detection parameters hidden: they don't seem to help
+  #edge_label = tk.Label(settings1, text="Canny edge detection parameters")
+#edge_label.grid(row=5, pady=15)
+  #edge_min_label = tk.Label(settings1, text="min threshold")
+#edge_min_label.grid(row=6)
+  #edge_min = tk.Scale(settings1, from_=0, to=255, orient=tk.HORIZONTAL)
+  #edge_min.set(edge_min_default)
+#edge_min.grid(row=7)
+#edge_min.bind("<ButtonRelease-1>", lambda x: process_image())
+  #edge_max_label = tk.Label(settings1, text="max threshold")
+#edge_max_label.grid(row=8, pady=(20,0))
+  #edge_max = tk.Scale(settings1, from_=0, to=255, orient=tk.HORIZONTAL)
+  #edge_max.set(edge_max_default)
+#edge_max.grid(row=9)
+#edge_max.bind("<ButtonRelease-1>", lambda x: process_image())
+  sobel_label = tk.Label(settings1, text="Sobel aperture")
+#sobel_label.grid(row=10, pady=(20,0))
+
+  sobel = tk.Scale(settings1, from_=3, to=7, orient=tk.HORIZONTAL,
+             command=odd_only, length=100)
+  sobel.set(sobel_default)
 #sobel.grid(row=11)
 #sobel.bind("<ButtonRelease-1>", lambda x: process_image())
-gradient_label = tk.Label(settings1, text="gradient")
-gradient = tk.IntVar() # choice of gradient for Canny edge detection
-gradient.set(gradient_default)
+  gradient_label = tk.Label(settings1, text="gradient")
+  gradient = tk.IntVar() # choice of gradient for Canny edge detection
+  gradient.set(gradient_default)
 #gradient_label.grid(row=12, pady=(20,0))
-gradientL1 = tk.Radiobutton(settings1, text="L1 norm", variable=gradient, value=1,
-                            command=process_image)
+  gradientL1 = tk.Radiobutton(settings1, text="L1 norm", variable=gradient, value=1,
+                              command=process_image)
 #gradientL1.grid(row=13)
-gradientL2 = tk.Radiobutton(settings1, text="L2 norm", variable=gradient, value=2,
-                            command=process_image)
+  gradientL2 = tk.Radiobutton(settings1, text="L2 norm", variable=gradient, value=2,
+                              command=process_image)
 #gradientL2.grid(row=14)
 
 
-threshold_label = tk.Label(settings2,
-                           text="line detection threshold\nfor Hough transform")
-threshold_label.grid(row=0, pady=(40,0), padx=15, sticky="nsew")
-threshold = tk.Scale(settings2, from_=1, to=500, orient=tk.HORIZONTAL)
-threshold.set(threshold_default)
-threshold.grid(row=1, pady=(7,71), padx=15, sticky="nsew")
-threshold.bind("<ButtonRelease-1>", lambda x: process_image())
+  threshold_label = tk.Label(settings2,
+                             text="line detection threshold\nfor Hough transform")
+  threshold_label.grid(row=0, pady=(40,0), padx=15, sticky="nsew")
+  threshold = tk.Scale(settings2, from_=1, to=500, orient=tk.HORIZONTAL)
+  threshold.set(threshold_default)
+  threshold.grid(row=1, pady=(7,71), padx=15, sticky="nsew")
+  threshold.bind("<ButtonRelease-1>", lambda x: process_image())
 
-fig1 = Figure(figsize=(3,2), dpi=round(s_width/3))
-threshold_subfigure = fig1.add_subplot(1, 1, 1)
-threshold_subfigure.axis('off')
-threshold_plot = FigureCanvasTkAgg(fig1, master=settings2)
-threshold_plot.get_tk_widget().grid(row=2, padx=15, sticky="nsew")
+  fig1 = Figure(figsize=(3,2), dpi=round(s_width/3))
+  threshold_subfigure = fig1.add_subplot(1, 1, 1)
+  threshold_subfigure.axis('off')
+  threshold_plot = FigureCanvasTkAgg(fig1, master=settings2)
+  threshold_plot.get_tk_widget().grid(row=2, padx=15, sticky="nsew")
 
 # With the edge detection parameters hidden,
 # we get a nicer layout by putting the threshold histogram
 # on settings1 not settings2
-black_thresh_label = tk.Label(settings1, text="black stone detection")
-black_thresh_label.grid(row=4, pady=(30,20), padx=15, sticky="nsew")
-fig2 = Figure(figsize=(3,2), dpi=round(s_width/3))
-black_thresh_subfigure = fig2.add_subplot(1, 1, 1)
-threshold_line = None # later, this will be set to the marker line on the histogram
-black_thresh_hist = FigureCanvasTkAgg(fig2, master=settings1)
-black_thresh_canvas = black_thresh_hist.get_tk_widget()
-black_thresh_canvas.grid(row=5, padx=15, sticky="nsew")
-black_thresh_canvas.bind('<Button-1>', set_black_thresh)
-black_thresh_canvas.bind('<B1-Motion>', set_black_thresh)
-black_thresh_canvas.bind('<ButtonRelease-1>', apply_black_thresh)
+  black_thresh_label = tk.Label(settings1, text="black stone detection")
+  black_thresh_label.grid(row=4, pady=(30,20), padx=15, sticky="nsew")
+  fig2 = Figure(figsize=(3,2), dpi=round(s_width/3))
+  black_thresh_subfigure = fig2.add_subplot(1, 1, 1)
+  threshold_line = None # later, this will be set to the marker line on the histogram
+  black_thresh_hist = FigureCanvasTkAgg(fig2, master=settings1)
+  black_thresh_canvas = black_thresh_hist.get_tk_widget()
+  black_thresh_canvas.grid(row=5, padx=15, sticky="nsew")
+  black_thresh_canvas.bind('<Button-1>', set_black_thresh)
+  black_thresh_canvas.bind('<B1-Motion>', set_black_thresh)
+  black_thresh_canvas.bind('<ButtonRelease-1>', apply_black_thresh)
 
-settings_window.rowconfigure(0, weight=1)
-settings_window.rowconfigure(1, weight=1)
-settings_window.columnconfigure(0, weight=1)
-settings_window.columnconfigure(1, weight=1)
+  settings_window.rowconfigure(0, weight=1)
+  settings_window.rowconfigure(1, weight=1)
+  settings_window.columnconfigure(0, weight=1)
+  settings_window.columnconfigure(1, weight=1)
 
-for i in range(5):
-  settings1.rowconfigure(i, weight=0) # top rows not resizable
-settings1.rowconfigure(5, weight=1) # histogram should resize
-settings1.columnconfigure(0, weight=1)
+  for i in range(5):
+    settings1.rowconfigure(i, weight=0) # top rows not resizable
+  settings1.rowconfigure(5, weight=1) # histogram should resize
+  settings1.columnconfigure(0, weight=1)
 
-for i in range(2):
-  settings2.rowconfigure(i, weight=0) # top rows not resizable
-settings2.rowconfigure(2, weight=1) # lines plot should resize
-settings2.columnconfigure(0, weight=1)
+  for i in range(2):
+    settings2.rowconfigure(i, weight=0) # top rows not resizable
+  settings2.rowconfigure(2, weight=1) # lines plot should resize
+  settings2.columnconfigure(0, weight=1)
 
-settings_window.withdraw()
+  settings_window.withdraw()
 
-log_window = tk.Toplevel()
-log_window.title("Img2SGF log")
-log_window.geometry(str(log_width) + "x" + str(log_height))
-log_window.protocol("WM_DELETE_WINDOW", lambda : toggle_log(False))
+  log_window = tk.Toplevel()
+  log_window.title("Img2SGF log")
+  log_window.geometry(str(log_width) + "x" + str(log_height))
+  log_window.protocol("WM_DELETE_WINDOW", lambda : toggle_log(False))
 
-log_text = tk.scrolledtext.ScrolledText(log_window, undo=True)
-log_text.pack(expand=True, fill='both')
-log_window.withdraw()
+  log_text = tk.scrolledtext.ScrolledText(log_window, undo=True)
+  log_text.pack(expand=True, fill='both')
+  log_window.withdraw()
+  log("img2sgf refer https://github.com/hanysz/img2sgf")
+  log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+  try: # in a try block in case any other package updates remove the .__version__ attribute
+       # (TKinter, what were you thinking?)
+    log("Using Tk version " + str(tk.TkVersion))
+    log("Using OpenCV version " + cv2.__version__)
+    log("Using numpy version " + np.__version__)
+    log("Using scikit-learn version " + sklearn.__version__)
+    log("Using matplotlib version " + matplotlib.__version__)
+    log("Using Pillow image library version " + Image.__version__)
+    if not using_PIL_ImageGrab:
+      log("Using pyscreenshot version " + ImageGrab.__version__)
+  except:
+    pass
 
-log("img2sgf by Alexander Hanysz, March 2020")
-log("https://github.com/hanysz/img2sgf")
-log(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-try: # in a try block in case any other package updates remove the .__version__ attribute
-     # (TKinter, what were you thinking?)
-  log("Using Tk version " + str(tk.TkVersion))
-  log("Using OpenCV version " + cv2.__version__)
-  log("Using numpy version " + np.__version__)
-  log("Using scikit-learn version " + sklearn.__version__)
-  log("Using matplotlib version " + matplotlib.__version__)
-  log("Using Pillow image library version " + Image.__version__)
-  if not using_PIL_ImageGrab:
-    log("Using pyscreenshot version " + ImageGrab.__version__)
-except:
-  pass
+  main_window.mainloop()
 
-if len(sys.argv)>3:
-  sys.exit("Too many command line arguments.")
 
-if len(sys.argv)>2:
-  output_file = sys.argv[2]
-else:
-  output_file = None
+select_config = 0
+if __name__ == '__main__':
+  description = """generate go sgf file from images (file or snapshot).
+  different kind of images should use different config to get correct recognization"""
 
-if len(sys.argv)>1:
-  input_file = sys.argv[1]
-  open_file(input_file)
-  if output_file == None:
-    # suggest output name based on input
-    output_file = os.path.splitext(input_file)[0] + ".sgf"
+  parser = argparse.ArgumentParser(description = description)
+  parser.add_argument('config', default=0, type=int, help='select proper config to preprocess image')
+  parser.add_argument('--input', help='the input image file')
+  parser.add_argument('--output', help='the sgf file as output')
+  args = parser.parse_args()
 
-main_window.mainloop()
+  select_config = args.config
+  input_file = args.input
+  output_file = args.output
+
+  if input_file:
+    open_file(input_file)
+    if output_file == None:
+      # suggest output name based on input
+      output_file = os.path.splitext(input_file)[0] + ".sgf"
+
+  gui()
