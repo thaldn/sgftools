@@ -980,16 +980,18 @@ def to_sgf_with_step(board):
       for j in range(BOARD_SIZE):
         if board[i,j] == BoardStates.WHITE:
           white_moves += "[" + board_letters[i] + board_letters[j] + "]"
+
   step_moves =""
-  for ind, step in sorted(steps.items(), key=lambda s:s[0]):
-    i, j = step[0], step[1]
-    step_move = "[" + board_letters[i] + board_letters[j] + "]"
-    if board[i][j] == BoardStates.WHITE:
-      white_moves = white_moves.replace(step_move, "")
-      step_moves += ";W"+step_move
-    else:
-      black_moves = black_moves.replace(step_move, "")
-      step_moves += ";B"+step_move
+  if save_with_step.get():
+    for ind, step in sorted(steps.items(), key=lambda s:s[0]):
+      i, j = step[0], step[1]
+      step_move = "[" + board_letters[i] + board_letters[j] + "]"
+      if board[i][j] == BoardStates.WHITE:
+        white_moves = white_moves.replace(step_move, "")
+        step_moves += ";W"+step_move
+      else:
+        black_moves = black_moves.replace(step_move, "")
+        step_moves += ";B"+step_move
 
   if side_to_move.get() == 1:
     output += black_moves + "\n" + white_moves + "\n"
@@ -1223,7 +1225,7 @@ def gui():
   global sobel, gradient, threshold_subfigure, threshold_line, threshold_plot
   global processed_canvas, show_circles, black_thresh_subfigure, black_thresh_hist
   global log_window, log_text, log_button, settings_window, settings_button
-  global side_to_move
+  global side_to_move, save_with_step
   main_window = tk.Tk()
   main_window.configure(background="#FFFFC0")
   main_window.geometry(str(main_width) + "x" + str(main_height))
@@ -1324,6 +1326,10 @@ def gui():
   black_to_play.pack(side=tk.LEFT)
   white_to_play.pack(side=tk.LEFT)
   to_play_label.pack(side=tk.LEFT)
+  save_with_step = tk.IntVar()
+  save_with_step.set(1)
+  step_button = tk.Checkbutton(stm_frame, text="save step", variable = save_with_step)
+  step_button.pack(side=tk.LEFT)
 
 # Settings window layout is two frames side by side
 #   settings1 | settings2
