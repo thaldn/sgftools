@@ -1,7 +1,5 @@
 # Load/capture an image and convert to SGF
-# Alexander Hanysz, March 2020
-# https://github.com/hanysz/img2sgf
-# Written for personal use, largely to learn about OpenCV.
+# refer to https://github.com/hanysz/img2sgf
 # Distributed without warranty, use at your own risk!
 
 # This file is in four parts:
@@ -10,10 +8,16 @@
 #   GUI functions
 #   create GUI and main loop
 
-# To do:
+# Features done:
+# 1. recognize the number in the stone: done
+# 2. save steps without correction
+# 3. add configuration for different types of images
+# 4. select boards automatically
+#
 # Future enhancements
 #   problem with L19 diagrams (and others): stones close together don't get detected as circles.  May need to replace Hough circle detection with contour detection?
-
+#   line detection/correction
+#   stone detection/correction
 
 # Part 1: imports/setup
 
@@ -180,6 +184,15 @@ def process_image():
   log("Converting to grayscale")
   gray_image_np = cv2.cvtColor(region_np, cv2.COLOR_BGR2GRAY)
 
+  # get possible radius of stone in the chessboard
+  gray = cv2.medianBlur(gray_image_np, 5)
+  length = min(gray.shape)
+  cs = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, length/20, param1=100, param2=30, minRadius=1, maxRadius=40)
+  if len(cs) > 0:
+      cs = cs.reshape(-1, 3)
+      rad = np.median(cs[:,2])
+      log(f"get possible stone radius : {rad}\n")
+
   #log("Running Canny edge detection algorithm with parameters:\n" +
   #    "- min threshold=" + str(edge_min.get()) + "\n" +
   #    "- max threshold=" + str(edge_max.get()) + "\n" +
@@ -187,6 +200,7 @@ def process_image():
   #    "- L" + str(gradient.get()) + " norm")
   log("Running Canny edge detection algorithm")
   # no point logging the parameters now I've turned off the UI for changing them
+  # edge / sobel isn't set in the GUI
   edge_detected_image_np = cv2.Canny(region_np,
                               edge_min_default, edge_max_default,
                               apertureSize = sobel.get(),
@@ -199,32 +213,32 @@ def process_image():
   blurs = [gray_image_np, edge_detected_image_np]
   for i in range(maxblur+1):
     b = 2*i + 1
-    blurs.append(cv2.medianBlur(gray_image_np, b))
+    #blurs.append(cv2.medianBlur(gray_image_np, b))
     blurs.append(cv2.GaussianBlur(gray_image_np, (b,b), b))
 
   first_circles = True
   circles = []
   for b in blurs:
     c = cv2.HoughCircles(b, cv2.HOUGH_GRADIENT, 1, 10, np.array([]), 100, 30, 1, 30)
-    if len(c)>0:
+    if len(c) > 0:
       if first_circles:
         circles = c[0]
         first_circles = False
       else:
         circles = np.vstack((circles, c[0]))
 
+  # omit too big or too small circles
+  circles = [c for c in circles if 1.15 * rad > c[2] > 0.85 * rad]
+  circles = np.uint16(np.around(circles))
   # For each circle, erase the bounding box and replace by a single pixel in the middle
   # This makes it easier to detect grid lines when
   # there are lots of stones on top of the line
-  radius = []
-  for i in range(len(circles)):
-    xc, yc, r = circles[i,:]
-    xc, yc, r = (int(xc), int(yc), int(r))
-    r = r+2 # need +2 because circle edges can stick out a little past the bounding box
-    radius.append(r)
-    ul = (int(round(xc-r)), int(round(yc-r)))
-    lr = (int(round(xc+r)), int(round(yc+r)))
-    middle = (int(round(xc)), int(round(yc)))
+  for c in circles:
+    # need +2 because circle edges can stick out a little past the bounding box
+    xc, yc, r = c[0], c[1], c[2] + 2
+    ul = (xc-r, yc-r)
+    lr = (xc+r, yc+r)
+    middle = (xc, yc)
     cv2.rectangle(circles_removed_image_np, ul, lr, color_black, -1)  # -1 = filled
     #cv2.circle(circles_removed_image_np, middle, 1, color_white, -1)
     cv2.line(circles_removed_image_np, (xc-r>>2, yc),(xc, yc), color_white, 1)
@@ -235,7 +249,7 @@ def process_image():
   find_grid()
   draw_images()
   draw_histogram(stone_brightnesses) # this should erase the histogram from any previous board
-  stone_size = int(np.median(radius))
+  stone_size = int(rad + 1)
   log(f"the stone's radius is {stone_size}\n")
   return stone_size
 

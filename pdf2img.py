@@ -53,7 +53,7 @@ def get_checkerboards_from_img(image, offset:int = 8, outimg = None, outtxt = No
         cv2.rectangle(img_txt, [x1, y1], [x2, y2], white_color, -1)
         checkers.append(np.array((x1, y1, x2, y2)))
 
-    # sort the checkers according their y position
+    # sort the checkers according their y center
     checkers = sorted(checkers, key = lambda p: p[1]+p[3])
     for checker in checkers:
         if outimg:
