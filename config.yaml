@@ -21,7 +21,7 @@
 
 # 清晰印刷，棋盘背景灰色，黑色棋子偏重
 -
-  brightness: 67
+  brightness: 69
   contrast: 51
   line_threshold: 132
   black_stone_threshold: 128

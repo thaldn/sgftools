@@ -144,6 +144,23 @@ def prepare_image():
   threshold.set(choose_threshold(region_size))
 
 
+def get_stone_size():
+  global stone_size
+  # keep the stone_size which will be used as offset etc
+  gray = cv2.cvtColor(np.array(input_image_PIL), cv2.COLOR_BGR2GRAY)
+  # get possible radius of stone in the chessboard
+  gray = cv2.medianBlur(gray, 5)
+  length = min(gray.shape)
+  cs = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, length/20, param1=100, param2=30, minRadius=1, maxRadius=40)
+  if len(cs) > 0:
+      cs = cs.reshape(-1, 3)
+      rad = np.median(cs[:,2])
+      stone_size = int(rad + 1)
+  log(f"the stone's radius is {stone_size}, adjust the grid space\n")
+  min_grid_spacing = int(1.6 * stone_size)
+  return stone_size
+
+
 def process_image():
   global edge_detected_image_PIL, circles, circles_removed_image_np, circles_removed_image_PIL, \
          gray_image_np, region_PIL
@@ -155,8 +172,6 @@ def process_image():
   global sobel, gradient
   global found_grid, valid_grid, board_ready
   # keep other functions informed of processing status
-  global stone_size
-  # keep the stone_size which will be used as offset etc
 
   if not image_loaded:
     return
@@ -165,6 +180,7 @@ def process_image():
   board_ready  = False
 
   log("\nProcessing image")
+  stone_size = get_stone_size()
   crop_and_rotate_image()
 
   if rotate_angle.get() != 0:
@@ -183,15 +199,6 @@ def process_image():
 
   log("Converting to grayscale")
   gray_image_np = cv2.cvtColor(region_np, cv2.COLOR_BGR2GRAY)
-
-  # get possible radius of stone in the chessboard
-  gray = cv2.medianBlur(gray_image_np, 5)
-  length = min(gray.shape)
-  cs = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, length/20, param1=100, param2=30, minRadius=1, maxRadius=40)
-  if len(cs) > 0:
-      cs = cs.reshape(-1, 3)
-      rad = np.median(cs[:,2])
-      log(f"get possible stone radius : {rad}\n")
 
   #log("Running Canny edge detection algorithm with parameters:\n" +
   #    "- min threshold=" + str(edge_min.get()) + "\n" +
@@ -228,7 +235,7 @@ def process_image():
         circles = np.vstack((circles, c[0]))
 
   # omit too big or too small circles
-  circles = [c for c in circles if 1.15 * rad > c[2] > 0.85 * rad]
+  circles = [c for c in circles if 1.05 * stone_size > c[2] > 0.95 * stone_size]
   circles = np.uint16(np.around(circles))
   # For each circle, erase the bounding box and replace by a single pixel in the middle
   # This makes it easier to detect grid lines when
@@ -249,8 +256,6 @@ def process_image():
   find_grid()
   draw_images()
   draw_histogram(stone_brightnesses) # this should erase the histogram from any previous board
-  stone_size = int(rad + 1)
-  log(f"the stone's radius is {stone_size}\n")
   return stone_size
 
 
@@ -383,16 +388,12 @@ def cluster_lines(hlines, vlines):
   return (hcentres, vcentres)
 
 
-def complete_grid(x):
+def normalize_grid(x):
   # Input: x is a set of grid coordinates, possibly with gaps
   #   stored as a numpy row vector, sorted
   # Output: x with gaps filled in, if that's plausible, otherwise None if grid is invalid
-  if x is None or len(x)==0:
-    log("No grid lines found at all!")
-    return None
-
-  if len(x)==1:
-    log("Only found one grid line")
+  if x is None or len(x) < 4:
+    log("Grid lines aren't enough!")
     return None
 
   spaces = x[1:] - x[:-1]
@@ -408,7 +409,7 @@ def complete_grid(x):
     return x
   small_spaces = spaces[spaces <= bound]
   max_space = max(small_spaces)
-  average_space = (min_space + max_space)/2
+  average_space = min((2*min_space + max_space)/3, stone_size * 2)
   left = x[0]
   right = x[-1]
   n_exact = (right-left)/average_space
@@ -449,7 +450,7 @@ def complete_grid(x):
 
 
 def truncate_grid(x):
-  # x is a vector of grid coordinates as for complete_grid()
+  # x is a vector of grid coordinates as for normalize_grid()
   # if size of x exceed board size by 1 or 2,
   # the extra lines are likely to be a bounding box, board edge or text
   # so we should drop them
@@ -471,13 +472,13 @@ def truncate_grid(x):
 def validate_grid(hcentres, vcentres):
   log("Assessing horizontal lines.")
   hcentres = truncate_grid(hcentres)
-  hcentres_complete = complete_grid(hcentres)
+  hcentres_complete = normalize_grid(hcentres)
   hcentres_complete = truncate_grid(hcentres_complete)
   if hcentres_complete is None:
     return [False, circles, 0, 0] + 4*[None]
   log("Assessing vertical lines.")
   vcentres = truncate_grid(vcentres)
-  vcentres_complete = complete_grid(vcentres)
+  vcentres_complete = normalize_grid(vcentres)
   vcentres_complete = truncate_grid(vcentres_complete)
   if vcentres_complete is None:
     return [False, circles, 0, 0] + 4*[None]
