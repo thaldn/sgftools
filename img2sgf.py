@@ -187,8 +187,9 @@ def process_image():
   # get possible radius of stone in the chessboard
   gray = cv2.medianBlur(gray_image_np, 5)
   length = min(gray.shape)
+  rad = 8
   cs = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1, length/20, param1=100, param2=30, minRadius=1, maxRadius=40)
-  if len(cs) > 0:
+  if cs is not None and len(cs) > 0:
       cs = cs.reshape(-1, 3)
       rad = np.median(cs[:,2])
       log(f"get possible stone radius : {rad}\n")
